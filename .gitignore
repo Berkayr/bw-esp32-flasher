@@ -1,0 +1,6 @@
+__pycache__/
+*.bin
+*.log
+AGENTS.md
+CLAUDE.md
+.pytest_cache/
