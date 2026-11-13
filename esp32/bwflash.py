@@ -63,6 +63,8 @@ def crc16_xmodem(data):
 
 
 def build_frame(seq, payload):
+    if not 1 <= seq <= 0xFF or len(payload) > CHUNK_SIZE:
+        raise ValueError('invalid XMODEM sequence or payload length')
     body = bytes(payload) + b'\xFF' * (CHUNK_SIZE - len(payload))
     crc = crc16_xmodem(body)
     return bytes([0x01, seq, seq ^ 0xFF]) + body + bytes([crc >> 8, crc & 0xFF])
@@ -136,6 +138,7 @@ def sign_rand(uid, rand, lt0, lt1):
 # ---- firmware file (streamed: the ESP32 has less RAM than the image) --------
 
 def _find_all(path, pat, start=0):
+    # Only uniqueness matters; stop at two matches to bound heap use on bad files.
     hits = []
     with open(path, 'rb') as f:
         f.seek(start)
@@ -149,41 +152,82 @@ def _find_all(path, pat, start=0):
             base = pos - len(tail)
             i = buf.find(pat)
             while i != -1:
-                if base + i not in hits:
-                    hits.append(base + i)
+                hits.append(base + i)
+                if len(hits) == 2:
+                    return hits
                 i = buf.find(pat, i + 1)
             pos += len(blk)
-            tail = buf[-(len(pat) - 1):]
+            tail = buf[-(len(pat) - 1):] if len(pat) > 1 else b''
     return hits
+
+
+def _model_id(path):
+    # Brightway images include a 12-digit ASCII model ID (e.g. at 0x22).
+    with open(path, 'rb') as f:
+        digits = b''
+        while True:
+            block = f.read(4096)
+            for value in block:
+                if 48 <= value <= 57:
+                    if len(digits) <= 12:
+                        digits += bytes([value])
+                else:
+                    if len(digits) == 12:
+                        return digits.decode()
+                    digits = b''
+            if not block:
+                return digits.decode() if len(digits) == 12 else None
 
 
 class Firmware:
     def __init__(self, path):
         self.path = path
+        try:
+            self._load(path)
+        except OSError as exc:
+            raise FlashError('preflight: cannot read image; check file path and filesystem: ' + str(exc))
+
+    def _load(self, path):
         with open(path, 'rb') as f:
             f.seek(0, 2)
             self.size = f.tell()
+            f.seek(0x0A)
+            leqi = f.read(4) == b'EU1\x00'
             f.seek(0x800)
             sig = f.read(8)
+        if leqi:
+            raise FlashError('preflight: LEQI image; use a LEQI flasher, not Brightway DFU')
+        # Reserve a 32-bit address for the upstream empty final packet as well.
+        if not 0x1000 <= self.size <= 0xFFFFF800:
+            raise FlashError('preflight: invalid image size; file is truncated or exceeds DFU addressing')
         o0 = _find_all(path, b'\x63\x7C')
-        if self.size < 0x1000 or (sig != b'DEPRD5C\x00' and not (len(o0) == 1 and o0[0] > 0x1000)):
-            raise FlashError("not a Brightway firmware file")
-        if len(o0) != 1:
-            raise FlashError("invalid / unsupported firmware file")
+        # Same rule as upstream detect_firmware_type: signature, or a unique table past 0x1000.
+        if sig != b'DEPRD5C\x00' and not (len(o0) == 1 and o0[0] > 0x1000):
+            raise FlashError('preflight: not a Brightway image; select the raw .bin for this ESC')
+        if len(o0) != 1 or o0[0] + 256 > self.size:
+            raise FlashError('preflight: invalid signing table; image is truncated or unsupported')
         o1 = _find_all(path, b'\x01\x02', o0[0])
-        if len(o1) != 1:
-            raise FlashError("invalid / unsupported firmware file")
+        if len(o1) != 1 or o1[0] - 1 < o0[0] + 256 or o1[0] + 10 > self.size:
+            raise FlashError('preflight: invalid round constants; image is truncated or unsupported')
         with open(path, 'rb') as f:
             f.seek(o0[0])
             self.lt0 = f.read(256)
             f.seek(o1[0] - 1)
             self.lt1 = f.read(11)
+        self.model_id = _model_id(path)
         self.total_packets = (self.size + PACKET_SIZE - 1) // PACKET_SIZE
 
     def packet(self, n):
-        with open(self.path, 'rb') as f:
-            f.seek(n * PACKET_SIZE)
-            return f.read(PACKET_SIZE)
+        try:
+            with open(self.path, 'rb') as f:
+                f.seek(n * PACKET_SIZE)
+                data = f.read(PACKET_SIZE)
+        except OSError as exc:
+            raise FlashError('transfer packet %d: cannot read image; check filesystem: %s' % (n + 1, exc))
+        expected = min(PACKET_SIZE, max(0, self.size - n * PACKET_SIZE))
+        if len(data) != expected:
+            raise FlashError('transfer packet %d: image size changed; recopy firmware before retrying' % (n + 1))
+        return data
 
 
 # ---- serial ----------------------------------------------------------------
@@ -219,7 +263,7 @@ class Link:
         t0 = time.ticks_ms()
         while time.ticks_diff(time.ticks_ms(), t0) < timeout_ms:
             if self.u.any():
-                buf += self.u.read(1)
+                buf = (buf + (self.u.read(1) or b''))[-n:]
                 if end is not None and buf.endswith(end):
                     break
         buf = buf[-n:]
@@ -247,20 +291,23 @@ class Flasher:
     def _get_uid(self):
         cmd = b'\x53\x2A\x7D\xAC'
         self.k.send(cmd)
+        # shortcut: upstream delimiter excludes UIDs containing 0x9B; changing it needs protocol review.
         r = self.k.read_until(21, b'\x9B')
-        if b'\x64' in r and b'\x9B' in r:
-            r = r[r.index(b'\x64'):r.index(b'\x9B')]
-            if len(r) >= 19 and r[1] == cmd[1] and r[2] == 0x10:
-                self.uid = r[3:19]
-                return True
+        if (len(r) == 21 and r[:3] == b'\x64\x2A\x10' and
+                r[-1:] == b'\x9B'):
+            self.uid = r[3:19]
+            return True
         return False
 
     def _get_ver(self):
         self.k.send(b'down get_ver\r')
         r = self.k.read_until(5)
         if b'\r' in r[-2:]:
-            self.version = r.split(b'\r')[0].decode()
-            return True
+            try:
+                self.version = r.split(b'\r')[0].decode()
+            except UnicodeError:
+                return False
+            return bool(self.version)
         return False
 
     def _cmd_ok(self, cmd, n=3, ok=b'k\r'):
@@ -269,19 +316,22 @@ class Flasher:
         if ok in r:
             return True
         if b'r\r' in r:
-            raise FlashError('ESC answered error to ' + repr(cmd))
+            raise FlashError('ESC rejected ' + repr(cmd) + '; image or ESC state is incompatible')
         return False
 
     def _retry(self, step, name):
         for _ in range(MAX_STATE_TRIES):
-            if step():
-                return
-        raise FlashError('no answer at step ' + name + '. Check wiring.')
+            try:
+                if step():
+                    return
+            except FlashError as exc:
+                raise FlashError(name + ': ' + str(exc))
+        raise FlashError(name + ': no valid reply after %d attempts; check wiring, power and image compatibility' % MAX_STATE_TRIES)
 
     def connect(self):
-        self._retry(self._get_uid, 'UID')
-        self.k.log('UID:', self.uid.decode())
-        self._retry(self._get_ver, 'get_ver')
+        self._retry(self._get_uid, 'connect/UID')
+        self.k.log('UID:', binascii.hexlify(self.uid).decode())
+        self._retry(self._get_ver, 'version/get_ver')
         self.k.log('MCU version:', self.version)
 
     def _rd_info(self):
@@ -291,7 +341,7 @@ class Flasher:
     def _ble_rand(self):
         self.k.send(b'down ble_rand ' + self.BLE_RAND + b'\r')
         r = self.k.read_until(20)
-        if not r.startswith(b'ok'):
+        if len(r) != 20 or not r.startswith(b'ok ') or not r.endswith(b'\r'):
             return False
         if r[3:19] != sign_rand(self.uid, self.BLE_RAND, self.fw.lt0, self.fw.lt1):
             raise FlashError('BLE_KEY does not match: wrong firmware for this ESC?')
@@ -300,7 +350,7 @@ class Flasher:
     def _mcu_rand(self):
         self.k.send(b'down mcu_rand\r')
         r = self.k.read_until(20)
-        if r.startswith(b'ok'):
+        if len(r) == 20 and r.startswith(b'ok ') and r.endswith(b'\r'):
             self.mcu_rand = r[3:19]
             return True
         return False
@@ -327,9 +377,9 @@ class Flasher:
                     if r == b'\x06':
                         break
                     if r == b'\x15':
-                        raise FlashError('CRC fail')
+                        raise FlashError('transfer packet %d chunk %d: CRC rejected; check signal quality and wiring' % (self.n_sent + 1, n + 1))
                 else:
-                    raise FlashError('no ACK after %d retries' % MAX_REPEATS)
+                    raise FlashError('transfer packet %d chunk %d: no ACK after %d attempts; check ESC power and wiring' % (self.n_sent + 1, n + 1, MAX_REPEATS))
         self.k.send(b'\x04\x04\x04')
         self.k.read_until(3, b'\x06')
         self.n_sent += 1
@@ -341,23 +391,23 @@ class Flasher:
 
     def flash(self):
         self.connect()
-        self._retry(self._rd_info, 'rd_info')
-        self._retry(self._ble_rand, 'ble_rand')
-        self._retry(self._mcu_rand, 'mcu_rand')
-        self._retry(self._mcu_key, 'mcu_key')
+        self._retry(self._rd_info, 'handshake/rd_info')
+        self._retry(self._ble_rand, 'handshake/ble_rand')
+        self._retry(self._mcu_rand, 'handshake/mcu_rand')
+        self._retry(self._mcu_key, 'handshake/mcu_key')
         while True:
-            self._retry(self._nvm_write, 'nvm_write')
+            self._retry(self._nvm_write, 'transfer packet %d/nvm_write' % (self.n_sent + 1))
             self._send_packet()
             if self.progress and self.packet:
                 self.progress(min(self.n_sent, self.fw.total_packets), self.fw.total_packets)
-            self._retry(self._wr_info, 'wr_info')
+            self._retry(self._wr_info, 'transfer packet %d/wr_info' % self.n_sent)
             if not self.packet:
                 break
-        self._retry(lambda: self._cmd_ok(b'down dfu_verify\r'), 'dfu_verify')
+        self._retry(lambda: self._cmd_ok(b'down dfu_verify\r'), 'verify/dfu_verify')
         self.k.log('verify OK')
-        self._retry(lambda: self._cmd_ok(b'down dfu_active\r'), 'dfu_active')
+        self._retry(lambda: self._cmd_ok(b'down dfu_active\r'), 'activate/dfu_active')
         self.k.log('firmware update completed')
-        self._retry(self._get_ver, 'get_ver')
+        self._retry(self._get_ver, 'version/get_ver')
         self.k.log('MCU version now:', self.version)
 
 
@@ -375,6 +425,8 @@ def info(debug=False):
 def flash(path, debug=False):
     fw = Firmware(path)
     print('firmware', path, fw.size, 'bytes,', fw.total_packets, 'packets')
+    if fw.model_id:
+        print('model ID:', fw.model_id)
     f = Flasher(Link(open_uart(), debug=debug), fw, _progress)
     t0 = time.time()
     f.flash()

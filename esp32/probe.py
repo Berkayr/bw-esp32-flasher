@@ -40,10 +40,13 @@ def _frames(pin, ms=600):
         import machine
         a = 0x3FF49000 + bwflash.IO_MUX[pin]
         machine.mem32[a] = machine.mem32[a] | 0x100
-    u.read()
-    time.sleep_ms(ms)
-    data = u.read() or b''
-    u.deinit()
+    try:
+        u.read()
+        time.sleep_ms(ms)
+        data = u.read() or b''
+    finally:
+        u.deinit()
+        Pin(tx, Pin.IN)
     return data.count(b'\x61\x30') + data.count(b'\x61\x31'), data[:16]
 
 
@@ -66,5 +69,7 @@ def classify(pin):
 
 def run(pins=(4, 16, 17, 18)):
     for p in pins:
-        print('GPIO%d: %s' % (p, classify(p)))
-        Pin(p, Pin.IN)
+        try:
+            print('GPIO%d: %s' % (p, classify(p)))
+        finally:
+            Pin(p, Pin.IN)

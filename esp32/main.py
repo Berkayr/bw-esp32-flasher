@@ -1,4 +1,6 @@
 # Runs at boot: hold the keep-alive wire high so the ESC stays on (see README).
 from machine import Pin
+from bwflash import KEEP_PIN
 
-Pin(17, Pin.OUT, value=1)
+if KEEP_PIN is not None:
+    Pin(KEEP_PIN, Pin.OUT, value=1)

@@ -85,6 +85,10 @@ table in the ScooterTeam guide:
 | BTN / keep-alive | black | **blue**: if it floats, the ESC switches off |
 | power | red 5V | red: **never connect** |
 
+Before flashing, the ESP32 checks the Brightway signature, image size and signing tables,
+rejects LEQI images, and prints a 12-digit model ID when found. Check this ID against your
+scooter; it is informational and does not prove model compatibility.
+
 With the wrong mapping the ESC never answers. The flasher shows empty responses to `53 2A 7D AC`
 ([bw-flasher #32](https://github.com/scooterteam/bw-flasher/issues/32) shows the same symptom).
 So probe the wires first, using an ESP32 with MicroPython and `probe.py` copied to it:
@@ -108,7 +112,7 @@ So probe the wires first, using an ESP32 with MicroPython and `probe.py` copied 
 
 | Symptom | Likely cause |
 |---|---|
-| `no answer at step UID` / empty responses to `53 2A 7D AC` | Wrong wire on ESC RX or GND. Run the probe. |
+| `connect/UID: no valid reply` / empty responses to `53 2A 7D AC` | Wrong wire on ESC RX or GND. Run the probe. |
 | Scooter switches off when you connect the cable | Keep-alive (blue on our cable) is floating. Hold it high. |
 | RX gets only zeros or broken frames | No pull-up on the ESC TX line. Use GPIO16 (pull-up set by the code) or add 4.7–10 kΩ to 3.3 V. |
 | `BLE_KEY does not match` | The image is not for this ESC. |
@@ -127,9 +131,12 @@ MicroPython. The steps are:
 The image is streamed from the ESP32's filesystem, so it doesn't have to fit in RAM.
 
 `tests/test_bwflash.py` runs both this port and the original bw-flasher against a fake ESC. It checks
-that the image arrives byte for byte and that both flashers send identical traffic:
+that the image arrives byte for byte and that both flashers send identical traffic. Tests generate a small synthetic image by default;
+no real firmware is included or required:
 
 ```
+BW_FLASHER_SRC=path/to/bw-flasher python -m pytest -q tests
+# Optional: repeat against your own image
 BW_FIRMWARE=patched.bin BW_FLASHER_SRC=path/to/bw-flasher python -m pytest -q tests
 ```
 
