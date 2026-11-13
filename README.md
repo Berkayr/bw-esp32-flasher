@@ -1,89 +1,133 @@
 # bw-esp32-flasher
 
-Flash Brightway scooter ESC firmware with an ESP32 alone: no USB-UART dongle needed.
-The ESP32 talks to the ESC over the dashboard cable and runs the same DFU protocol as
-[ScooterTeam bw-flasher](https://github.com/scooterteam/bw-flasher). It also includes
-a wire probe that tells you which wire is which, so you don't have to trust colour tables.
+**Flash a Brightway scooter controller (e.g. Xiaomi Electric Scooter 5) with an ESP32 or an Arduino
+you already have. You don't need to buy a USB-UART dongle.**
 
-Prepare the firmware image with [bw-patcher](https://github.com/scooterteam/bw-patcher)
-as usual. This project only replaces the flashing hardware.
+Brightway ESCs are flashed over the dashboard cable with
+[ScooterTeam bw-flasher](https://github.com/scooterteam/bw-flasher). Most guides tell you to buy a
+USB-UART adapter for this. You can do the same job with:
 
-## Tested
+- **an ESP32 on its own.** This repo puts the whole flasher on the ESP32, so the PC only copies files.
+- **an Arduino Uno/Nano used as the adapter** for bw-flasher on your PC.
 
-| Scooter | ESC firmware | Board | Result |
-|---|---|---|---|
-| Xiaomi Electric Scooter 5 (standard) | 0015 → patched (reports 9999) | ESP32-WROOM-32D, MicroPython 1.29 | full flash OK, 251 s |
+The repo also has a **wire probe**. Cable colours often don't match the guides, and a wrong wire
+was the reason our first evening of flashing failed.
 
-Anything else is untested. Other Brightway models that bw-flasher supports use the same protocol,
-but they have not been tried with this project.
+Make the firmware image with [bw-patcher](https://github.com/scooterteam/bw-patcher) as usual.
 
-## What you need
+## Pick your setup
 
-- ESP32 dev board (ESP32-WROOM-32, 3.3 V logic) with [MicroPython](https://micropython.org/download/ESP32_GENERIC/)
-- `mpremote` (`pip install mpremote`)
-- A cable or adapter that reaches the ESC's dashboard connector
-- Dupont jumper wires
-
-## Wiring
-
-Unplug the dashboard. The scooter must be switched on.
-
-| Cable wire (our cable, see below) | Function | ESP32 pin |
+| Setup | You need | Status |
 |---|---|---|
-| black | GND | GND |
-| yellow | ESC RX | GPIO5 (TX) |
-| green | ESC TX (open collector) | GPIO16 (RX, internal pull-up enabled) |
-| blue | must stay high, or the ESC switches off | GPIO17 (driven high) |
-| red | battery-side power | **not connected** |
+| **A. ESP32 alone** (this repo) | any ESP32-WROOM-32 dev board | ✅ tested: Xiaomi Scooter 5, full flash in 251 s |
+| **B. Arduino Uno / Nano as adapter** + bw-flasher | Uno or Nano, 1 extra jumper wire | ⚠️ untested |
+| C. USB-UART dongle + bw-flasher | CH340/CP2102 adapter | ✅ works (the usual way) |
 
-Pins can be changed at the top of `esp32/bwflash.py` (`TX_PIN`, `RX_PIN`, `KEEP_PIN`).
+All setups need a cable to the ESC's dashboard connector and some Dupont jumper wires.
 
-### Colours are not reliable
+## A. ESP32 alone
 
-We used a female M7 5-pin "3 Lite / 4 Lite" extension cable. Its colours did **not** match the
-M7 table in the ScooterTeam guide (which lists white RX, yellow GND, green TX, red 5V, black BTN).
-On our cable, black was ground and yellow was ESC RX. Also, the ESC switched off whenever the blue wire was left floating.
-With the wrong mapping, the ESC never answers and the flasher shows empty responses to `53 2A 7D AC`
-([bw-flasher #32](https://github.com/scooterteam/bw-flasher/issues/32) shows the same symptom).
+![ESP32 wiring](docs/wiring-esp32.svg)
 
-So identify the wires first:
-
-1. Connect ESP32 GND to the wire you think is ground. Connect each other unknown wire, except a
-   wire that could carry battery voltage, to a free GPIO, for example 4, 16, 17 and 18.
-2. Run the probe:
+1. **Install MicroPython on the ESP32** (once). Download the
+   [ESP32_GENERIC](https://micropython.org/download/ESP32_GENERIC/) image, then:
    ```
-   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/probe.py :probe.py
+   pip install esptool mpremote
+   esptool --chip esp32 erase_flash
+   esptool --chip esp32 write_flash -z 0x1000 ESP32_GENERIC-<version>.bin
+   ```
+2. **Copy the files**, together with your patched firmware renamed to `fw.bin`:
+   ```
+   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/probe.py :probe.py + cp esp32/main.py :main.py + cp patched.bin :fw.bin
+   mpremote reset
+   ```
+   `main.py` holds GPIO17 high from power-up, so the ESC doesn't switch off when you connect the blue wire.
+3. **Wire it up** as in the picture. Unplug the dashboard and switch the scooter on.
+   Not sure which wire is which? See [Identify the wires](#identify-the-wires).
+4. **Check the connection.** This only reads from the ESC:
+   ```
+   mpremote exec "import bwflash; print(bwflash.info())"
+   ```
+   You should see the UID and the current version, e.g. `(b'Lspd…', '0015')`.
+5. **Flash.** It takes about 4 minutes. Don't touch the cable or the power button while it runs.
+   ```
+   mpremote exec "import bwflash; bwflash.flash('fw.bin')"
+   ```
+   It ends with `verify OK`, `firmware update completed` and the new version.
+
+Pins can be changed at the top of `esp32/bwflash.py` (`TX_PIN`, `RX_PIN`, `KEEP_PIN`). The ESP32
+needs no extra parts: the pull-up for the ESC's open-collector TX line is switched on inside the chip.
+
+## B. Arduino Uno / Nano as the adapter
+
+![Arduino Uno wiring](docs/wiring-uno-bridge.svg)
+
+An Uno has too little memory to hold the firmware (32 KB, while the image is ~140 KB). But its USB
+chip is a USB-UART adapter. Connect **RESET to GND** to keep the ATmega silent. Pins 0 and 1 then go
+straight to the USB chip, and bw-flasher on your PC uses the Uno's serial port like any dongle.
+
+1. Wire as in the picture: RESET–GND jumper, ESC TX → `TX→1`, ESC RX → `RX←0`, keep-alive → 3.3V, GND.
+   On a Nano, use the pins labelled TX1 / RX0.
+2. Plug the Uno into the PC and run bw-flasher on its port (`/dev/ttyACM0`, `/dev/ttyUSB0` or `COMx`).
+
+**This setup has not been tested yet.** If you try it, please open an issue with the result.
+
+## Identify the wires
+
+We used a female M7 5-pin cable sold for the 3 Lite / 4 Lite. Its colours did **not** match the M7
+table in the ScooterTeam guide:
+
+| | ScooterTeam M7 table | our cable (measured) |
+|---|---|---|
+| GND | yellow | **black** |
+| ESC RX | white | **yellow** |
+| ESC TX | green | green |
+| BTN / keep-alive | black | **blue**: if it floats, the ESC switches off |
+| power | red 5V | red: **never connect** |
+
+With the wrong mapping the ESC never answers. The flasher shows empty responses to `53 2A 7D AC`
+([bw-flasher #32](https://github.com/scooterteam/bw-flasher/issues/32) shows the same symptom).
+So probe the wires first, using an ESP32 with MicroPython and `probe.py` copied to it:
+
+1. Connect ESP32 GND to the wire you think is ground.
+2. Connect every other unknown wire to a free GPIO, e.g. 4, 16, 17, 18. **Leave out any wire that
+   could carry battery voltage.** The ESP32 is a 3.3 V part.
+3. Run:
+   ```
    mpremote exec "import probe; probe.run((4, 16, 17, 18))"
    ```
-3. Read the result for each wire:
-   - **ESC TX**: status frames were seen. Connect it to the RX pin.
-   - **held high even with pull-down**: ESC RX, which has its own pull-up. Connect it to the TX pin.
-   - **held low even with pull-up**: ground.
-   - **floating**: an ESC input. If the scooter switches off while it is being probed, it is the
-     keep-alive line: hold it high (`KEEP_PIN`).
 
-## Flashing
+| Probe says | Wire is | Connect to |
+|---|---|---|
+| `ESC TX (… status frames)` | ESC TX | ESP32 RX pin (GPIO16) |
+| `held high even with pull-down` | ESC RX (has its own pull-up) | ESP32 TX pin (GPIO5) |
+| `held low even with pull-up` | ground | GND |
+| `floating` and the scooter switches off | keep-alive line | GPIO17 (held high) |
 
-```
-mpremote cp esp32/bwflash.py :bwflash.py + cp patched.bin :fw.bin
-mpremote exec "import bwflash; print(bwflash.info())"    # reads UID + version, writes nothing
-mpremote exec "import bwflash; bwflash.flash('fw.bin')"  # ~4 minutes
-```
+## Troubleshooting
 
-`info()` must print the UID and version before you flash. While flashing, don't touch the cable or
-the power button. Recovery from an interrupted flash has not been tested with this project.
-
-The image is streamed from the ESP32's filesystem, so it does not need to fit in RAM.
+| Symptom | Likely cause |
+|---|---|
+| `no answer at step UID` / empty responses to `53 2A 7D AC` | Wrong wire on ESC RX or GND. Run the probe. |
+| Scooter switches off when you connect the cable | Keep-alive (blue on our cable) is floating. Hold it high. |
+| RX gets only zeros or broken frames | No pull-up on the ESC TX line. Use GPIO16 (pull-up set by the code) or add 4.7–10 kΩ to 3.3 V. |
+| `BLE_KEY does not match` | The image is not for this ESC. |
+| Sparks between two wires | You shorted power to ground. Stop: red is not a signal wire. |
 
 ## How it works
 
-`bwflash.py` is a line-by-line port of bw-flasher's `brightway_flasher.py`, `keygen.py` and
-`xmodem.py` to MicroPython: UID → `get_ver` → `rd_info` → `ble_rand`/`mcu_rand`/`mcu_key`
-challenge → 2 KiB `nvm_write` packets as 128-byte XMODEM-CRC frames → `wr_info` (CRC-32) →
-`dfu_verify` → `dfu_active`.
+`esp32/bwflash.py` is a port of bw-flasher's `brightway_flasher.py`, `keygen.py` and `xmodem.py` to
+MicroPython. The steps are:
 
-`tests/test_bwflash.py` runs both this port and the original bw-flasher against a fake ESC. It
-checks that the ESC receives the exact image and that both send byte-identical traffic:
+1. UID, then `get_ver`, then `rd_info`.
+2. The `ble_rand` / `mcu_rand` / `mcu_key` challenge.
+3. 2 KiB `nvm_write` packets, sent as 128-byte XMODEM-CRC frames.
+4. `wr_info` with a CRC-32, then `dfu_verify` and `dfu_active`.
+
+The image is streamed from the ESP32's filesystem, so it doesn't have to fit in RAM.
+
+`tests/test_bwflash.py` runs both this port and the original bw-flasher against a fake ESC. It checks
+that the image arrives byte for byte and that both flashers send identical traffic:
 
 ```
 BW_FIRMWARE=patched.bin BW_FLASHER_SRC=path/to/bw-flasher python -m pytest -q tests
@@ -91,12 +135,11 @@ BW_FIRMWARE=patched.bin BW_FLASHER_SRC=path/to/bw-flasher python -m pytest -q te
 
 ## Risks
 
-Flashing ESC firmware can brick the controller. Use only images made for your exact model and
-ESC. Keep the stock image. The ESP32 is a 3.3 V part: never connect a supply wire to a GPIO.
+Flashing ESC firmware can brick the controller. Use only images made for your exact model and keep
+the stock image. Recovery from an interrupted flash has not been tested with this project.
 
 ## License and credits
 
-Protocol, key generation and the flashing sequence come from
+The protocol, key generation and flashing sequence come from
 [ScooterTeam bw-flasher](https://github.com/scooterteam/bw-flasher) (commit `8baeea1`), licensed
-CC BY-NC-SA 4.0. This port is released under the same license: see [LICENSE](LICENSE).
-Non-commercial use only.
+CC BY-NC-SA 4.0. This port uses the same license: see [LICENSE](LICENSE). Non-commercial use only.
