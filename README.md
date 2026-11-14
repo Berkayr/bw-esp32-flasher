@@ -1,9 +1,9 @@
 # bw-esp32-flasher
 
-**Flash a Brightway scooter controller (e.g. Xiaomi Electric Scooter 5) with an ESP32 or an Arduino
+**Flash a Brightway or LEQI scooter controller (e.g. Xiaomi Electric Scooter 5) with an ESP32 or an Arduino
 you already have. You don't need to buy a USB-UART dongle.**
 
-Brightway ESCs are flashed over the dashboard cable with
+Brightway and LEQI ESCs are flashed over the dashboard cable with
 [ScooterTeam bw-flasher](https://github.com/scooterteam/bw-flasher). Most guides tell you to buy a
 USB-UART adapter for this. You can do the same job with:
 
@@ -25,6 +25,34 @@ Make the firmware image with [bw-patcher](https://github.com/scooterteam/bw-patc
 
 All setups need a cable to the ESC's dashboard connector and some Dupont jumper wires.
 
+## Supported models
+
+Families and required dashboard cables follow the
+[ScooterTeam guide](https://wiki.bastelpichi.de/brightway.html#supported-models) and its
+[connector table](https://wiki.bastelpichi.de/brightway.html#step-1-check-your-scooters-connector-type).
+Connector gender below describes the required cable. All models are Xiaomi Electric Scooters.
+Upstream compatibility does not establish ESP32 hardware compatibility.
+
+| Model | Family | Dashboard cable | ESP32 status |
+|---|---|---|---|
+| 3 Lite | Brightway | male M7 5-pin | untested with ESP32 |
+| 4 | Brightway | male M7 5-pin | untested with ESP32 |
+| 4 Lite | Brightway | male M7 5-pin | untested with ESP32 |
+| 4 Ultra | Brightway | male M7 5-pin | untested with ESP32 |
+| 4 Pro 2nd Gen | Brightway | female M7 5-pin | untested with ESP32 |
+| 5 | Brightway | female M7 5-pin | tested |
+| 5 Pro | Brightway | male M7 5-pin | untested with ESP32 |
+| 5 Max | Brightway | male M7 5-pin | untested with ESP32 |
+| 4 Lite 2nd Gen | LEQI | male M8 5-pin | untested with ESP32 |
+| 5 Plus | LEQI | male M8 7-pin | untested with ESP32 |
+| 5 Elite | LEQI | male M8 5-pin | untested with ESP32 |
+| 6 | LEQI | male M8 5-pin | untested with ESP32 |
+| 6 Lite | LEQI | male M8 5-pin | untested with ESP32 |
+
+LEQI has only synthetic host-side verification against upstream; no LEQI hardware or real
+LEQI image has been tested here. The guide marks 4 Lite 2nd Gen and 5 Plus as TBA;
+listing a family and cable does not guarantee an available or compatible patched image.
+
 ## A. ESP32 alone
 
 ![ESP32 wiring](docs/wiring-esp32.svg)
@@ -38,22 +66,25 @@ All setups need a cable to the ESC's dashboard connector and some Dupont jumper 
    ```
 2. **Copy the files**, together with your patched firmware renamed to `fw.bin`:
    ```
-   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/probe.py :probe.py + cp esp32/main.py :main.py + cp patched.bin :fw.bin
+   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/leqiflash.py :leqiflash.py + cp esp32/flasher.py :flasher.py + cp esp32/probe.py :probe.py + cp esp32/main.py :main.py + cp patched.bin :fw.bin
    mpremote reset
    ```
    `main.py` holds GPIO17 high from power-up, so the ESC doesn't switch off when you connect the blue wire.
 3. **Wire it up** as in the picture. Unplug the dashboard and switch the scooter on.
    Not sure which wire is which? See [Identify the wires](#identify-the-wires).
-4. **Check the connection.** This only reads from the ESC:
+4. **Check the connection.** For Brightway, this only reads from the ESC:
    ```
    mpremote exec "import bwflash; print(bwflash.info())"
    ```
    You should see the UID and the current version, e.g. `(b'Lspd…', '0015')`.
-5. **Flash.** It takes about 4 minutes. Don't touch the cable or the power button while it runs.
+   For LEQI use `mpremote exec "import leqiflash; print(leqiflash.info())"`;
+   it returns `(version, region)` from the read-only DeviceInfo command.
+5. **Flash.** The image selects the family automatically. Brightway on our Xiaomi 5 takes about 4 minutes. Don't touch the cable or the power button while it runs.
    ```
-   mpremote exec "import bwflash; bwflash.flash('fw.bin')"
+   mpremote exec "import flasher; flasher.flash('fw.bin')"
    ```
-   It ends with `verify OK`, `firmware update completed` and the new version.
+   Brightway ends with `verify OK`, `firmware update completed` and the new version.
+   LEQI ends with `LEQI firmware update completed`; it has no separate verify command.
 
 Pins can be changed at the top of `esp32/bwflash.py` (`TX_PIN`, `RX_PIN`, `KEEP_PIN`). The ESP32
 needs no extra parts: the pull-up for the ESC's open-collector TX line is switched on inside the chip.
@@ -85,9 +116,14 @@ table in the ScooterTeam guide:
 | BTN / keep-alive | black | **blue**: if it floats, the ESC switches off |
 | power | red 5V | red: **never connect** |
 
-Before flashing, the ESP32 checks the Brightway signature, image size and signing tables,
-rejects LEQI images, and prints a 12-digit model ID when found. Check this ID against your
-scooter; it is informational and does not prove model compatibility.
+Before opening UART, `flasher.flash(path)` detects Brightway first (signature or unique signing
+pattern), then LEQI (valid EU1 header and body size), following upstream detection order.
+Brightway checks size and signing tables and prints a 12-digit model ID when found. Check this
+ID against your scooter; it is informational and does not prove model compatibility.
+LEQI checks the embedded CRC over the stored body; as upstream does, low-AA-density plaintext
+images may pass without a matching embedded CRC. Only raw `.bin` input is supported; ZIP/TEA
+container processing from the desktop utility is not included.
+`bwflash.flash(path)` remains a Brightway-only API; use `flasher.flash(path)` for either family.
 
 With the wrong mapping the ESC never answers. The flasher shows empty responses to `53 2A 7D AC`
 ([bw-flasher #32](https://github.com/scooterteam/bw-flasher/issues/32) shows the same symptom).
@@ -128,11 +164,28 @@ MicroPython. The steps are:
 3. 2 KiB `nvm_write` packets, sent as 128-byte XMODEM-CRC frames.
 4. `wr_info` with a CRC-32, then `dfu_verify` and `dfu_active`.
 
-The image is streamed from the ESP32's filesystem, so it doesn't have to fit in RAM.
+`esp32/leqiflash.py` ports upstream's LEQI binary protocol: 19200 baud, 8N1, `5A 12`
+packets with CRC-16/XMODEM, start (0x03), 128-byte data (0x04), and end (0x05).
+The EU1 header's little-endian uint16 at 0x0E selects the body at 0x80. Embedded firmware CRC
+uses reflected polynomial 0xA001, initial 0xFFFF, stored big-endian. XOR-0xAA bodies and
+plaintext bodies are sent unchanged, including the embedded CRC; no extra XOR is applied.
+The last wire chunk is padded with 0xFF.
 
-`tests/test_bwflash.py` runs both this port and the original bw-flasher against a fake ESC. It checks
+Upstream quirks are preserved: reply CRCs are ignored; start/end do not check status;
+failed data chunks are counted while remaining chunks continue, then prevent finalization.
+There are no start/data retries; end gets 10 attempts at 400 ms (other replies: 2 s).
+Polling and delays match upstream: 50 ms after TX, 10 ms poll, 20 ms short-reply grace,
+44 ms per chunk, 690 ms before end, 60 ms before each end retry.
+
+The image is streamed from the ESP32's filesystem, so it doesn't have to fit in RAM.
+LEQI validation reads at most 1024 bytes at a time (density sample at most 896 bytes),
+transfer reads 128 bytes, and detection scans in 4096-byte blocks. No new runtime dependency
+is required. Hardware heap use on MicroPython 1.29/classic ESP32 remains unmeasured.
+
+`tests/test_bwflash.py` and `tests/test_leqiflash.py` run both this port and the original bw-flasher against a fake ESC. It checks
 that the image arrives byte for byte and that both flashers send identical traffic. Tests generate a small synthetic image by default;
-no real firmware is included or required:
+no real firmware is included or required. LEQI tests cover both body variants, byte-identical TX,
+reconstructed firmware, virtual-clock delays, retries, malformed replies and bounded reads:
 
 ```
 BW_FLASHER_SRC=path/to/bw-flasher python -m pytest -q tests
