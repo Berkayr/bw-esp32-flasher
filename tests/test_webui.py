@@ -474,3 +474,34 @@ def test_brightway_uart_cleanup_on_connection_error(tmp_path, monkeypatch):
         with pytest.raises(bwflash.FlashError, match='connect/UID'):
             operation()
         assert uart.closed
+
+
+def test_info_reads_until_two_replies_agree(ui, monkeypatch):
+    replies = iter([(b'uid', '999'), (b'uid', '9999'), (b'uid', '9999')])
+    monkeypatch.setattr(bwflash, 'info', lambda: next(replies))
+    call(ui, '/api/info', {'family': 'Brightway'})
+    assert settled(ui.jobs)['info']['version'] == '9999'
+
+
+def test_info_rejects_unstable_replies(ui, monkeypatch):
+    replies = iter(['1', '2', '3', '4', '5'])
+    monkeypatch.setattr(bwflash, 'info', lambda: (b'uid', next(replies)))
+    call(ui, '/api/info', {'family': 'Brightway'})
+    state = settled(ui.jobs)
+    assert state['info'] is None and 'replies differ' in state['error']
+
+
+@pytest.mark.parametrize('fails', [False, True])
+def test_flash_turns_radio_off_and_back_on(ui, monkeypatch, fails):
+    events = []
+    monkeypatch.setattr(webui, 'RADIO_OFF_DELAY', 0)
+    monkeypatch.setattr(webui, 'radio', lambda on: events.append(on))
+    def flash(path, progress):
+        events.append('flash')
+        if fails:
+            raise bwflash.FlashError('transfer packet 1: CRC rejected')
+    monkeypatch.setattr(bwflash, 'flash', flash)
+    ui.jobs.update(image={'id': 'current', 'family': 'Brightway'}, info={'family': 'Brightway'})
+    call(ui, '/api/flash', {'confirm': 'current'})
+    settled(ui.jobs)
+    assert events == [False, 'flash', True]

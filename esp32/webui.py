@@ -5,6 +5,7 @@ import binascii
 import gc
 import json
 import os
+import time
 import _thread
 
 import bwflash
@@ -17,6 +18,7 @@ CHUNK = 1024
 TEMP_PATH = 'webui-upload.tmp'
 IMAGE_PATH = 'webui-fw.bin'
 PAGE_PATH = 'webui.html'
+RADIO_OFF_DELAY = 1.5  # seconds: lets the flash request's reply reach the phone first
 SAFE_PINS = (4, 5, 13, 14, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33)
 ROUTES = {'/': 'GET', '/api/status': 'GET', '/api/upload': 'POST',
           '/api/info': 'POST', '/api/flash': 'POST', '/api/probe': 'POST'}
@@ -189,7 +191,16 @@ class Jobs:
         raise HTTPError(400, 'Unknown firmware family; select a raw Brightway or LEQI .bin')
 
     def info(self, family):
-        values = self.module(family).info()
+        # Wi-Fi activity drops occasional UART bytes (measured ~5%), so read until two replies agree.
+        read = self.module(family).info
+        values = read()
+        for _ in range(3):
+            again = read()
+            if again == values:
+                break
+            values = again
+        else:
+            raise bwflash.FlashError('connect: replies differ between reads; check wiring and try again')
         result = dict(family=family, uid=None, version=None)
         if family == 'Brightway':
             result.update(uid=binascii.hexlify(values[0]).decode(), version=values[1])
@@ -199,7 +210,13 @@ class Jobs:
         return 'Connection checked (read-only).'
 
     def flash(self, family):
-        self.module(family).flash(IMAGE_PATH, progress=self.progress)
+        # The radio corrupts UART traffic, so the AP is off for the whole flash.
+        time.sleep(RADIO_OFF_DELAY)
+        radio(False)
+        try:
+            self.module(family).flash(IMAGE_PATH, progress=self.progress)
+        finally:
+            radio(True)
         return ('Brightway: verify OK; firmware update completed.' if family == 'Brightway'
                 else 'LEQI firmware update completed (no separate verify command).')
 
@@ -350,7 +367,11 @@ class WebUI:
                 print('HTTP close:', exc)
 
 
+_ap = None
+
+
 def start_ap():
+    global _ap
     import network
     network.WLAN(network.WLAN.IF_STA).active(False)
     ap = network.WLAN(network.WLAN.IF_AP)
@@ -359,7 +380,17 @@ def start_ap():
     # authmode/password are the ESP32 aliases retained in MicroPython 1.29.
     ap.config(essid='bw-flasher-' + suffix, authmode=3, password=AP_PASSWORD, max_clients=2)
     ap.ifconfig((IP, '255.255.255.0', IP, IP))
+    _ap = ap
     return ap
+
+
+def radio(on):
+    if _ap is None:
+        return
+    if on:
+        start_ap()
+    else:
+        _ap.active(False)
 
 
 def disabled():

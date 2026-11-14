@@ -21,7 +21,7 @@ Make the firmware image with [bw-patcher](https://github.com/scooterteam/bw-patc
 |---|---|---|
 | **A. ESP32 alone** (this repo) | any ESP32-WROOM-32 dev board | ✅ tested: Xiaomi Scooter 5, full flash in 251 s |
 | **B. Arduino Uno / Nano as adapter** + bw-flasher | Uno or Nano, 1 extra jumper wire | ⚠️ untested |
-| **C. Phone only (Wi-Fi)** | ESP32-WROOM-32, powerbank, phone | ⚠️ partly tested: AP, upload, preflight and connection check on a real ESP32 + Xiaomi 5; flashing over Wi-Fi and phone browsers untested |
+| **C. Phone only (Wi-Fi)** | ESP32-WROOM-32, powerbank, phone | ✅ tested with a PC as the Wi-Fi client: full flash on a Xiaomi 5; phone browsers untested |
 | D. USB-UART dongle + bw-flasher | CH340/CP2102 adapter | ✅ works (the usual way) |
 
 All setups need a cable to the ESC's dashboard connector and some Dupont jumper wires.
@@ -30,8 +30,15 @@ All setups need a cable to the ESC's dashboard connector and some Dupont jumper 
 
 After a one-time USB installation, the ESP32 needs only power. The phone connects directly
 to its access point; no internet, app, CDN or desktop computer is needed during use.
-On a real ESP32 with a Xiaomi 5, the access point, a 141 KB upload (3.4 s), preflight and the
-connection check work. **Flashing over Wi-Fi and the page on Android Chrome / iPhone Safari are not tested yet.**
+Tested on a real ESP32 and Xiaomi 5 with a PC as the Wi-Fi client: 141 KB upload in 3.4 s, preflight,
+connection check and a full flash (69/69 packets, verify OK). **The page has not been tried on Android
+Chrome or iPhone Safari yet.**
+
+**The board turns its Wi-Fi off while it flashes (about 4 minutes).** With the radio on, about 1 in 20
+replies from the ESC lost a byte in our measurements, and the first Wi-Fi flash attempt was
+rejected by the ESC at packet 1. With the radio off, every read and both full flashes were clean.
+Your phone may switch to another network meanwhile: rejoin `bw-flasher-XXXX` afterwards to see the result.
+The connection check reads the ESC until two replies agree, for the same reason.
 
 1. Install **MicroPython 1.29 / ESP32_GENERIC** once (see setup A below). Copy all files:
    ```
@@ -56,7 +63,7 @@ connection check work. **Flashing over Wi-Fi and the page on Android Chrome / iP
    Only one upload, connection check, probe or flash runs at a time. The page shows packet n/N;
    reaching N/N still requires finalization. Wait for the final success or actionable error.
    **Keep both power supplies connected and do not touch the wires or scooter power button.**
-   If the phone disconnects, the board continues. Rejoin Wi-Fi and reopen the page to read
+   The Wi-Fi goes off during the flash and the board continues on its own. Rejoin Wi-Fi and reopen the page to read
    progress/result. State lasts until the next operation or ESP32 restart, not across power loss.
 6. If the connection fails, use the **wire probe wizard**. Measure wires first: never connect
    power/battery voltage to GPIOs. Select 1–6 supported GPIOs. The page explains each verdict;
