@@ -10,7 +10,7 @@ Flash Brightway or LEQI scooter controllers with an ESP32, with USB and offline 
 | **B. Arduino Uno / Nano as adapter** + bw-flasher | Uno or Nano, RESET jumper, **3.3 V level shifter required** | ⚠️ untested |
 | **C. Phone only (Wi-Fi)** | ESP32-WROOM-32, powerbank, phone | ✅ tested with a PC as the Wi-Fi client: full flash on a Xiaomi 5; phone browsers untested |
 | D. USB-UART dongle + bw-flasher | **3.3 V logic** CH340/CP2102 adapter | Standard upstream setup; not retested here |
-| **E. PC browser (no install)** | ESP32-WROOM-32 (4 MiB), desktop Chrome/Edge | ✅ tested on Windows 11 + Edge with a Xiaomi 5: one-click install, connect, data, light; full flash from this page not yet |
+| **E. PC browser (no install)** | ESP32-WROOM-32 (4 MiB), desktop Chrome/Edge | ✅ tested on Windows 11 + Edge with a Xiaomi 5: one-click install, connect, data, light, full flash in 256 s |
 
 All setups need a cable to the ESC's dashboard connector and some Dupont jumper wires.
 
@@ -93,8 +93,9 @@ host-side checks. The page's own USB modules (`repl.js`, `device.js`) were also 
 real ESP32 and Xiaomi 5 through a Node serial bridge: connect, connection check, data, light
 on/off and a 141 KB upload with CRC and preflight all worked. On Windows 11 with Edge (CH340
 driver installed automatically by Windows), the page installed the image with ESP Web Tools,
-then connected, read the controller, showed live data and switched the light on and off.
-**Still untested: the wire probe and a full scooter flash from this page.**
+then connected, read the controller, showed live data, switched the light on and off, and ran a
+full flash of a Xiaomi 5 (69/69 packets, verify OK, 256 s; the controller answered normally after).
+**Still untested: the wire probe from this page.**
 
 <p align="center"><img src="docs/screenshot-pc.png" width="420" alt="Desktop page with install, connect, wiring and connection check steps"></p>
 <p align="center"><sub>The desktop page in Chrome before connecting: install once, then connect over USB.</sub></p>
