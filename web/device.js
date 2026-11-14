@@ -18,7 +18,15 @@ export function infoCode(family) {
 export function dataCode(full = false) {
   return prefix + 'd=telemetry.read_status()\n' + (full ? 'd.update(telemetry.read_info())\n' : '') + emit('d');
 }
-export const lightCode = () => prefix + emit('telemetry.light_test()');
+export const lightCode = () => prefix + `import select, sys
+p=select.poll()
+p.register(sys.stdin, select.POLLIN)
+def stop():
+ if p.poll(0):
+  sys.stdin.read(1)
+  return True
+ return False
+` + emit('telemetry.light_test(telemetry.LIGHT_MAX_SECONDS, stop)');
 export const batteryCode = () => prefix + `try:
  d=telemetry.read_status()
 except Exception:

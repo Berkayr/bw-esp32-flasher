@@ -185,11 +185,19 @@ def test_light_bytes_timing_and_zero_controls(clock, monkeypatch, seconds):
     assert uart.closed
 
 
-@pytest.mark.parametrize('duration', [0, -1, 10.01, True, '5', float('nan'), float('inf')])
+@pytest.mark.parametrize('duration', [0, -1, 60.01, True, '5', float('nan'), float('inf')])
 def test_light_rejects_invalid_duration_before_uart(monkeypatch, duration):
     monkeypatch.setattr(bwflash, 'open_uart', lambda: pytest.fail('must not open UART'))
     with pytest.raises(ValueError):
         telemetry.light_test(duration)
+
+
+def test_light_stops_when_asked(clock, monkeypatch):
+    uart = UART(clock=clock)
+    monkeypatch.setattr(bwflash, 'open_uart', lambda: uart)
+    assert 'Light off' in telemetry.light_test(stop=lambda: len(uart.tx) >= 3)
+    assert len(uart.tx) == 3
+    assert uart.closed
 
 
 def test_light_short_write_closes(clock, monkeypatch):

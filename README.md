@@ -29,7 +29,7 @@ No Python, mpremote or app installation is needed on the user's computer.
    An already installed board can skip installation. Connecting stops the phone web server;
    Wi-Fi is switched off before every scooter operation to avoid UART corruption.
 3. Follow **Wire**, choose the controller family, **Check connection**, and optionally run
-   the **Light test**, **Wire probe** and **Data** tools. Private serials/UID stay hidden until
+   the **Light on/off**, **Wire probe** and **Data** tools. Private serials/UID stay hidden until
    toggled; no controller data is logged, stored or sent to a server.
 4. Upload a patched raw `.bin` for your exact scooter. Upload is chunked, size/CRC checked
    and family-preflight validated before replacing `fw.bin`. Review compatibility and power,
@@ -70,9 +70,13 @@ still connect. To update modules, rebuild and reinstall; installation erases pre
 ESP Web Tools **10.5.2** is the sole external script, loaded from an exact-version CDN URL.
 Its installer dependencies also come from the CDN; runtime USB controls are local ES modules.
 No analytics or remote controller API is used. This desktop flow has automated fake-USB and
-host-side checks, but **real desktop browser + ESP32 installation, boot/mount, upload, light,
-probe, battery guard and full scooter flash remain hardware-untested**. The existing phone
-hardware results do not establish USB-browser compatibility.
+host-side checks. The page's own USB modules (`repl.js`, `device.js`) were also run against a
+real ESP32 and Xiaomi 5 through a Node serial bridge: connect, connection check, data, light
+on/off and a 141 KB upload with CRC and preflight all worked. **Still untested: the browser's
+port picker, a real ESP Web Tools installation, the wire probe and a full scooter flash from this page.**
+
+<p align="center"><img src="docs/screenshot-pc.png" width="420" alt="Desktop page with install, connect, wiring and connection check steps"></p>
+<p align="center"><sub>The desktop page in Chrome before connecting: install once, then connect over USB.</sub></p>
 
 ## Pick your setup
 
@@ -93,6 +97,9 @@ to its access point; no internet, app, CDN or desktop computer is needed during 
 Tested on a real ESP32 and Xiaomi 5 with a PC as the Wi-Fi client: 141 KB upload in 3.4 s, preflight,
 connection check and a full flash (69/69 packets, verify OK). **The page has not been tried on Android
 Chrome or iPhone Safari yet.**
+
+<p align="center"><img src="docs/screenshot-phone.png" width="320" alt="Phone page with wiring table, connection check, light on/off buttons and live data showing 86 % battery"></p>
+<p align="center"><sub>The phone page served by the ESP32 (real Xiaomi 5, dashboard unplugged). Serial numbers stay hidden until you tick the box.</sub></p>
 
 **The board turns its Wi-Fi off while it flashes (about 4 minutes).** With the radio on, about 1 in 20
 replies from the ESC lost a byte in our measurements, and the first Wi-Fi flash attempt was
@@ -180,11 +187,11 @@ Each get-info field requires two identical valid replies in at most three reques
 or inconsistent fields are marked unavailable without discarding successful fields. No real
 serial numbers are included in documentation or tests.
 
-**Light test (5 s)** in the connection area sends the stock frame
-`51 10 06 32 01 88 00 00 1E 40 AE` every 20 ms. The owner verified that this
-turns on the tail light as a wiring check. Throttle and brake are always zero and cannot
-be set by the API. The Python `telemetry.light_test(seconds=5)` duration is limited to 10 s.
-No control stream continues after the test finishes; normal host-timeout status may return.
+**Light on / Light off** in the connection area is a wiring check. Light on sends the stock frame
+`51 10 06 32 01 88 00 00 1E 40 AE` every 20 ms and the tail light comes on (verified by the owner).
+The ESC keeps the light on only while these frames arrive, so **Light off** simply stops them.
+**If you forget, the light turns off by itself after 60 seconds.** Throttle and brake are always
+zero and cannot be set by the API. `telemetry.light_test(seconds, stop)` is limited to 60 s.
 
 The Brightway web flash guard uses `telemetry.LOW_BATTERY` (20%) as its sole threshold.
 Below it the UI warns: "Battery below 20%: flashing is not recommended (a power loss during

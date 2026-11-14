@@ -4,7 +4,7 @@ const el = id => document.getElementById(id);
 const supported = window.isSecureContext && 'serial' in navigator &&
   !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) &&
   !(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-let repl = null, busy = false, info = null, image = null, data = {}, reviewing = false, installerReady = false;
+let repl = null, busy = false, lightOn = false, info = null, image = null, data = {}, reviewing = false, installerReady = false;
 const family = () => el('family').value;
 const ready = () => !!repl?.raw && !repl.fault && !busy;
 function clearReview() {
@@ -16,6 +16,7 @@ function controls() {
   const idle = ready();
   for (const id of ['check', 'upload', 'probe', 'family', 'file', 'pins', 'probeSafe']) el(id).disabled = !idle;
   for (const id of ['light', 'refresh', 'autoRefresh']) el(id).disabled = !idle || family() !== 'Brightway';
+  el('lightOff').disabled = !lightOn;
   el('connect').disabled = !supported || busy || !!repl;
   el('disconnect').disabled = busy || !repl;
   el('install').disabled = !supported || busy || !!repl || !installerReady;
@@ -79,9 +80,12 @@ el('check').onclick = () => job('Checking controller', async () => {
   el('device').textContent = `${info.family} · Version: ${info.version}` + (info.region ? ' · Region: ' + info.region : '');
   renderData();
 });
-el('light').onclick = () => job('Testing light for 5 seconds', async () => {
-  clearReview(); el('result').textContent = await execute(lightCode());
+el('light').onclick = () => job('Tail light on (max 60 s)', async () => {
+  clearReview(); lightOn = true; controls();
+  try { el('result').textContent = await execute(lightCode(), {timeout: 70000}); }
+  finally { lightOn = false; }
 });
+el('lightOff').onclick = () => repl?.poke();
 async function readData(full) {
   const saved = Object.fromEntries(Object.entries(data).filter(([key]) =>
     !['battery_percent', 'voltage', 'battery_temperature', 'esc_temperature', 'event'].includes(key)));

@@ -23,7 +23,8 @@ RADIO_OFF_DELAY = 1.5  # seconds: lets the flash request's reply reach the phone
 SAFE_PINS = (4, 5, 13, 14, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33)
 ROUTES = {'/': 'GET', '/api/status': 'GET', '/api/upload': 'POST',
           '/api/info': 'POST', '/api/flash': 'POST', '/api/probe': 'POST',
-          '/api/data': 'POST', '/api/battery': 'POST', '/api/light': 'POST'}
+          '/api/data': 'POST', '/api/battery': 'POST', '/api/light': 'POST',
+          '/api/light_off': 'POST'}
 
 
 class HTTPError(Exception):
@@ -269,6 +270,7 @@ class WebUI:
         self.jobs = Jobs()
         self.token = binascii.hexlify(os.urandom(16)).decode()
         self.clients = 0
+        self.light_stop = False
 
     async def dispatch(self, reader):
         path, headers, length = await asyncio.wait_for(parse_request(reader), 10)
@@ -295,6 +297,10 @@ class WebUI:
                 raise ValueError()
         except (ValueError, UnicodeError):
             raise HTTPError(400, 'Expected a JSON object')
+        if path == '/api/light_off':
+            # Not a job: the running light job holds the lock and polls this flag.
+            self.light_stop = True
+            return 200, {'accepted': True}
         return self.operation(path, data)
 
     async def upload(self, reader, length):
@@ -338,7 +344,8 @@ class WebUI:
                 elif path == '/api/battery':
                     function, args = self.jobs.battery, ()
                 else:
-                    function, args = telemetry.light_test, ()
+                    self.light_stop = False
+                    function, args = telemetry.light_test, (telemetry.LIGHT_MAX_SECONDS, lambda: self.light_stop)
             else:
                 pins = data.get('pins')
                 if (not isinstance(pins, list) or not 1 <= len(pins) <= 6 or

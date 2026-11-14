@@ -158,6 +158,12 @@ export class RawRepl {
     });
   }
 
+  // Wakes code that polls stdin (the light loop). A newline is harmless if it reaches an idle raw REPL.
+  async poke() {
+    if (!this.busy || !this.raw || this.fault) return;
+    await this._send('\n');
+  }
+
   async close() {
     if (this.busy) throw Error('Wait for the current operation before disconnecting');
     if (this.raw && !this.fault) await this._send('\r\x02');

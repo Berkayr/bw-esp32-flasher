@@ -153,16 +153,20 @@ def battery_warning(values):
     return None
 
 
-def light_test(seconds=5):
-    if type(seconds) not in (int, float) or not 0 < seconds <= 10:
-        raise ValueError('Light test must last more than 0 and at most 10 seconds')
+LIGHT_MAX_SECONDS = 60
+
+
+def light_test(seconds=LIGHT_MAX_SECONDS, stop=None):
+    # The ESC lights the tail light only while control frames keep arriving; stopping them turns it off.
+    if type(seconds) not in (int, float) or not 0 < seconds <= LIGHT_MAX_SECONDS:
+        raise ValueError('Light test must last more than 0 and at most %d seconds' % LIGHT_MAX_SECONDS)
     uart = bwflash.open_uart()
     try:
         start = time.ticks_ms()
-        while time.ticks_diff(time.ticks_ms(), start) < seconds * 1000:
+        while time.ticks_diff(time.ticks_ms(), start) < seconds * 1000 and not (stop and stop()):
             if uart.write(LIGHT_FRAME) != len(LIGHT_FRAME):
                 raise bwflash.FlashError('Light test: short UART write')
             time.sleep(.020)
-        return 'Light test finished. The tail light should have turned on.'
+        return 'Light off. It stays on only while the ESP32 sends control frames.'
     finally:
         uart.deinit()

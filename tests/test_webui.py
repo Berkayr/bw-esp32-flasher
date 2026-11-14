@@ -53,7 +53,7 @@ class Writer:
 
 
 def request(path='/api/status', body=b'', token=None, method=None, extra=b''):
-    method = method or ('POST' if path in ('/api/upload', '/api/info', '/api/flash', '/api/probe', '/api/data', '/api/battery', '/api/light') else 'GET')
+    method = method or ('POST' if path in ('/api/upload', '/api/info', '/api/flash', '/api/probe', '/api/data', '/api/battery', '/api/light', '/api/light_off') else 'GET')
     kind = 'application/octet-stream' if path == '/api/upload' else 'application/json'
     return (('%s %s HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\nContent-Type: %s\r\n' %
              (method, path, webui.IP, len(body), kind)).encode() +
@@ -580,10 +580,19 @@ def test_data_full_then_live_drops_stale_live_fields(ui, monkeypatch):
 
 def test_light_api_uses_fixed_duration_and_no_control_arguments(ui, monkeypatch):
     calls = []
-    monkeypatch.setattr(webui.telemetry, 'light_test', lambda: calls.append('fixed') or 'Done')
+    monkeypatch.setattr(webui.telemetry, 'light_test', lambda seconds, stop: calls.append((seconds, stop())) or 'Done')
     call(ui, '/api/light', {'family': 'Brightway', 'seconds': 100, 'throttle': 100, 'brake': 100})
     assert settled(ui.jobs)['result'] == 'Done'
-    assert calls == ['fixed']
+    assert calls == [(webui.telemetry.LIGHT_MAX_SECONDS, False)]
+
+
+def test_light_off_stops_running_light(ui, monkeypatch):
+    def light(seconds, stop):
+        assert call(ui, '/api/light_off', {})[0] == 200
+        return 'stopped' if stop() else 'still on'
+    monkeypatch.setattr(webui.telemetry, 'light_test', light)
+    call(ui, '/api/light', {'family': 'Brightway'})
+    assert settled(ui.jobs)['result'] == 'stopped'
 
 
 def test_review_reads_current_battery(ui, monkeypatch):

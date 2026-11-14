@@ -38,7 +38,7 @@
 <select id="family"><option>Brightway</option><option>LEQI</option></select>
 <p><small>Brightway: 3 Lite, 4, 4 Lite, 4 Ultra, 4 Pro 2nd Gen, 5, 5 Pro, 5 Max. LEQI: 4 Lite 2nd Gen, 5 Plus, 5 Elite, 6, 6 Lite. Compatibility is not guaranteed; LEQI is hardware-untested.</small></p>
 <button id="check">Check connection (read-only)</button><pre id="device">No controller read yet.</pre>
-<button id="light">Light test (5 s)</button><small>Brightway only. Tail light should turn on; throttle and brake are fixed at zero.</small></section>
+<button id="light">Light on</button><button id="lightOff" disabled>Light off</button><small>Brightway only. Tail light should turn on and stay on until you press Light off, and turns off by itself after 60 s if you forget; throttle and brake are fixed at zero.</small></section>
 <section><h2>5. Data</h2><p id="dataSupport">Verified on Xiaomi 5 / Brightway ESC 0015 only. Other models unverified. Data and light test are not supported for LEQI.</p>
 <button id="refresh">Refresh data and device information</button><label><input id="autoRefresh" type="checkbox">Auto-refresh live data every 2 seconds while idle</label>
 <div id="batteryGauge" aria-live="polite">— %</div><meter id="batteryMeter" min="0" max="100" value="0" aria-label="Battery percent" hidden></meter>

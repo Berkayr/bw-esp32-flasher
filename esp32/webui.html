@@ -17,7 +17,7 @@
 <select id="family"><option>Brightway</option><option>LEQI</option></select>
 <p><small>Brightway: 3 Lite, 4, 4 Lite, 4 Ultra, 4 Pro 2nd Gen, 5, 5 Pro, 5 Max. LEQI: 4 Lite 2nd Gen, 5 Plus, 5 Elite, 6, 6 Lite. Compatibility is not guaranteed; LEQI is hardware-untested.</small></p>
 <button id="check" type="button">Check connection (read-only)</button><pre id="device">No controller read yet.</pre>
-<button id="light" type="button">Light test (5 s)</button><small>The tail light should turn on if the wires are right. Sends stock control frames with throttle and brake fixed at zero. Brightway only.</small></section>
+<button id="light" type="button">Light on</button><button id="lightOff" type="button" disabled>Light off</button><small>The tail light should turn on if the wires are right. It stays on until you press Light off, and turns off by itself after 60 s if you forget. Sends stock control frames with throttle and brake fixed at zero. Brightway only.</small></section>
 <section><h2>Data</h2><p id="dataSupport">Verified on Xiaomi 5 / Brightway ESC 0015 only.</p>
 <button id="refresh" type="button">Refresh data and device information</button>
 <label><input id="autoRefresh" type="checkbox">Auto-refresh live data every 2 seconds while idle</label>
@@ -53,6 +53,7 @@ function clearConfirmation(){confirmedImage=null;el('confirmBox').hidden=true;el
 function controls(){
  ['check','upload','probe','family','file','pins','refresh','light'].forEach(id=>el(id).disabled=!ready());
  el('light').disabled=!ready()||el('family').value!=='Brightway';
+ el('lightOff').disabled=!(online&&state&&state.busy&&state.job==='light');
  el('refresh').disabled=!ready()||el('family').value!=='Brightway';
  const compatible=state&&state.image&&state.info&&state.image.family===state.info.family;
  el('review').disabled=!ready()||!compatible;
@@ -89,7 +90,7 @@ async function poll(){
 }
 async function send(path,data,raw=false){
  localBusy=true;clearConfirmation();el('error').textContent='';controls();
- try{const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':raw?'application/octet-stream':'application/json','X-Flasher-Token':token},body:raw?data:JSON.stringify(data)});const v=await r.json();if(!r.ok)throw Error(v.error||'Request failed');state.busy=true;el('result').textContent='Accepted. Waiting for board status…';return true;}
+ try{const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':raw?'application/octet-stream':'application/json','X-Flasher-Token':token},body:raw?data:JSON.stringify(data)});const v=await r.json();if(!r.ok)throw Error(v.error||'Request failed');state.busy=true;if(path==='light')state.job='light';el('result').textContent='Accepted. Waiting for board status…';return true;}
  catch(e){el('error').textContent=e.message+' If a flash request lost its reply, check board status before retrying.';}
  finally{localBusy=false;controls();}
 }
@@ -121,6 +122,7 @@ el('flash').onclick=()=>{if(ready()&&el('agree').checked&&confirmedImage===state
 el('probe').onclick=()=>{const parts=el('pins').value.split(',').map(v=>v.trim());if(!el('probeSafe').checked||parts.some(v=>!/^\d+$/.test(v))){el('error').textContent='Confirm the measured voltages and enter comma-separated GPIO numbers.';return;}send('probe',{pins:parts.map(Number)});};
 el('refresh').onclick=()=>send('data',{family:el('family').value,full:true});
 el('light').onclick=()=>send('light',{family:el('family').value});
+el('lightOff').onclick=()=>send('light_off',{});
 el('showSerials').onchange=renderData;
 el('family').onchange=()=>{clearConfirmation();el('showSerials').checked=false;renderData();controls();};
 setInterval(()=>{if(el('autoRefresh').checked&&ready()&&!confirmedImage&&el('family').value==='Brightway')send('data',{family:'Brightway'});},2000);
