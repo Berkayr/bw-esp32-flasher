@@ -1,26 +1,45 @@
 # bw-esp32-flasher
 
-**Flash a Brightway or LEQI scooter controller (e.g. Xiaomi Electric Scooter 5) with an ESP32 or an Arduino
-you already have. You don't need to buy a USB-UART dongle.**
+Flash Brightway or LEQI scooter controllers with an ESP32, with USB and offline Wi-Fi interfaces.
 
-Brightway and LEQI ESCs are flashed over the dashboard cable with
-[ScooterTeam bw-flasher](https://github.com/scooterteam/bw-flasher). Most guides tell you to buy a
-USB-UART adapter for this. You can do the same job with:
+## Pick your setup
 
-- **an ESP32 on its own.** This repo puts the whole flasher on the ESP32, so the PC only copies files.
-- **an Arduino Uno/Nano used as the adapter** for bw-flasher on your PC.
+| Setup | You need | Status |
+|---|---|---|
+| **A. ESP32 alone** (this repo) | classic ESP32-WROOM-32 dev board (MicroPython 1.29.0) | ✅ tested: Xiaomi Scooter 5, full flash in 251 s |
+| **B. Arduino Uno / Nano as adapter** + bw-flasher | Uno or Nano, RESET jumper, **3.3 V level shifter required** | ⚠️ untested |
+| **C. Phone only (Wi-Fi)** | ESP32-WROOM-32, powerbank, phone | ✅ tested with a PC as the Wi-Fi client: full flash on a Xiaomi 5; phone browsers untested |
+| D. USB-UART dongle + bw-flasher | **3.3 V logic** CH340/CP2102 adapter | Standard upstream setup; not retested here |
+| **E. PC browser (no install)** | ESP32-WROOM-32 (4 MiB), desktop Chrome/Edge | ✅ tested on Windows 11 + Edge with a Xiaomi 5: one-click install, connect, data, light; full flash from this page not yet |
 
-The repo also has a **wire probe**. Cable colours often don't match the guides, and a wrong wire
-was the reason our first evening of flashing failed.
+All setups need a cable to the ESC's dashboard connector and some Dupont jumper wires.
 
-Make the firmware image with [bw-patcher](https://github.com/scooterteam/bw-patcher) as usual.
+## Disclaimer
+
+Provided **as-is, without warranty**. Firmware modification may void your warranty and can
+**brick the controller**. You are responsible for applicable local laws, including speed limits
+(typically 20–25 km/h in EU countries; check your jurisdiction). This project is unofficial and
+not affiliated with Xiaomi, Brightway, LEQI or ScooterTeam. Trademarks belong to their owners.
+Read the full [legal disclaimer](LEGAL_DISCLAIMER.md) before use.
+
+Create a compatible patched image with [bw-patcher](https://github.com/scooterteam/bw-patcher).
 
 ## E. PC browser (no install)
 
-Open **`https://<user>.github.io/bw-esp32-flasher/`** in desktop Chrome or Edge
-(owner replaces `<user>` and publishes later; this private repository is not hosted yet).
+Hosted page: coming soon. Until then run it locally:
+
+```sh
+git clone https://github.com/Berkayr/bw-esp32-flasher.git
+cd bw-esp32-flasher
+python3 -m http.server -d web
+# Open http://localhost:8000 in desktop Chrome/Edge.
+```
+
+Use Python 3 (on Windows, `py -3` can replace `python3`). If you downloaded a source ZIP,
+extract it and open a terminal in that folder instead of cloning. Installed boards can connect
+immediately; the installer needs the image built below.
 Plug in a classic **ESP32-WROOM-32 with exactly 4 MiB flash** using a USB data cable.
-No Python, mpremote or app installation is needed on the user's computer.
+The hosted flow needs no Python, mpremote or app installation; local preview uses Python as above.
 
 1. Disconnect the scooter wires. Click **Install ESP32 flasher** once, select the USB port,
    and choose erase when prompted. This replaces the board's files and installs MicroPython
@@ -61,7 +80,7 @@ Localhost is a secure context for Web Serial. Remote hosting requires HTTPS.
 The build downloads and SHA-256 verifies **MicroPython ESP32_GENERIC 1.29.0** and uses
 **littlefs-python 0.15.0** and **esptool 5.1.0** to produce
 `web/firmware/bw-esp32-flasher.bin` (4 MiB, flash offset 0). See
-[build details and pinned hashes](tools/README.md). The output is ignored and is not committed.
+[build details and pinned hashes](tools/README.md). The binary output is ignored and is not committed; keep the generated `NOTICE.txt` with the published image.
 Publish the **contents of `web/`**, including the generated `firmware/` directory, as the Pages
 artifact so that `index.html` is at the site's root. There is no publishing workflow yet.
 Without the built image, installation is disabled with an explanation; installed boards can
@@ -72,23 +91,13 @@ Its installer dependencies also come from the CDN; runtime USB controls are loca
 No analytics or remote controller API is used. This desktop flow has automated fake-USB and
 host-side checks. The page's own USB modules (`repl.js`, `device.js`) were also run against a
 real ESP32 and Xiaomi 5 through a Node serial bridge: connect, connection check, data, light
-on/off and a 141 KB upload with CRC and preflight all worked. **Still untested: the browser's
-port picker, a real ESP Web Tools installation, the wire probe and a full scooter flash from this page.**
+on/off and a 141 KB upload with CRC and preflight all worked. On Windows 11 with Edge (CH340
+driver installed automatically by Windows), the page installed the image with ESP Web Tools,
+then connected, read the controller, showed live data and switched the light on and off.
+**Still untested: the wire probe and a full scooter flash from this page.**
 
 <p align="center"><img src="docs/screenshot-pc.png" width="420" alt="Desktop page with install, connect, wiring and connection check steps"></p>
 <p align="center"><sub>The desktop page in Chrome before connecting: install once, then connect over USB.</sub></p>
-
-## Pick your setup
-
-| Setup | You need | Status |
-|---|---|---|
-| **A. ESP32 alone** (this repo) | any ESP32-WROOM-32 dev board | ✅ tested: Xiaomi Scooter 5, full flash in 251 s |
-| **B. Arduino Uno / Nano as adapter** + bw-flasher | Uno or Nano, 1 extra jumper wire | ⚠️ untested |
-| **C. Phone only (Wi-Fi)** | ESP32-WROOM-32, powerbank, phone | ✅ tested with a PC as the Wi-Fi client: full flash on a Xiaomi 5; phone browsers untested |
-| **E. PC browser (no install)** | ESP32-WROOM-32 (4 MiB), desktop Chrome/Edge | ⚠️ USB browser hardware-untested |
-| D. USB-UART dongle + bw-flasher | CH340/CP2102 adapter | ✅ works (the usual way) |
-
-All setups need a cable to the ESC's dashboard connector and some Dupont jumper wires.
 
 ## C. Phone only (Wi-Fi)
 
@@ -99,7 +108,7 @@ connection check and a full flash (69/69 packets, verify OK). **The page has not
 Chrome or iPhone Safari yet.**
 
 <p align="center"><img src="docs/screenshot-phone.png" width="320" alt="Phone page with wiring table, connection check, light on/off buttons and live data showing 86 % battery"></p>
-<p align="center"><sub>The phone page served by the ESP32 (real Xiaomi 5, dashboard unplugged). Serial numbers stay hidden until you tick the box.</sub></p>
+<p align="center"><sub>The ESP32 phone page shows wiring, connection checks, light on/off controls and battery data; private serial numbers are hidden by default.</sub></p>
 
 **The board turns its Wi-Fi off while it flashes (about 4 minutes).** With the radio on, about 1 in 20
 replies from the ESC lost a byte in our measurements, and the first Wi-Fi flash attempt was
@@ -115,8 +124,13 @@ The connection check reads the ESC until two replies agree, for the same reason.
    If previously using USB-only mode, remove `webui.disabled` via the REPL before resetting.
    An out-of-box ESP32 needs this initial installation; the PC browser installer above can do it without command-line tools.
 2. Power the board from a powerbank. Join **`bw-flasher-XXXX`** (last two AP MAC bytes).
-   The default WPA2 password is **`bw-flasher-setup`**. Change `AP_PASSWORD` in `webui.py`
-   before copying if other people could be nearby. Stay on this Wi-Fi when the phone warns
+   A random 16-character WPA2 password is generated on first boot and saved as `wifi.txt`
+   on that board. During the one-time USB setup, click **Connect ESP32** on the desktop page
+   to see SSID and password (read locally via raw REPL). Alternatively read the USB boot console
+   or run `mpremote exec "import webui; print(webui.wifi_credentials())"` while idle.
+   Save the password before moving to powerbank-only use; it survives restarts.
+   To reset it, run `mpremote exec "import os; os.remove('wifi.txt')"` and reset the ESP32;
+   a new password is generated. Never reset or interrupt a running flash. Stay on this Wi-Fi when the phone warns
    that it has no internet, then open **http://192.168.4.1** in the regular browser.
 3. Follow the page's wiring guide. Select **Brightway** or **LEQI** for your controller and
    tap **Check connection**. It reads Brightway UID/version or LEQI version/region.
@@ -188,7 +202,7 @@ or inconsistent fields are marked unavailable without discarding successful fiel
 serial numbers are included in documentation or tests.
 
 **Light on / Light off** in the connection area is a wiring check. Light on sends the stock frame
-`51 10 06 32 01 88 00 00 1E 40 AE` every 20 ms and the tail light comes on (verified by the owner).
+`51 10 06 32 01 88 00 00 1E 40 AE` every 20 ms and the tail light comes on (verified on a Xiaomi 5).
 The ESC keeps the light on only while these frames arrive, so **Light off** simply stops them.
 **If you forget, the light turns off by itself after 60 seconds.** Throttle and brake are always
 zero and cannot be set by the API. `telemetry.light_test(seconds, stop)` is limited to 60 s.
@@ -204,7 +218,7 @@ through `/api/status` and restores Wi-Fi. This guard covers the web UI, not the 
 
 Telemetry uses 64-byte UART reads and at most a 69-byte splitter buffer, bounded request
 windows, and at most three retained replies per info field. No dependencies were added.
-Actual MicroPython heap headroom and these new UI flows still require hardware/browser testing.
+Actual MicroPython heap headroom remains unmeasured. Phone-mode flows were tested with a PC Wi-Fi client; the desktop page was tested on Windows 11 + Edge and its modules via a Node bridge on Linux. Real phone browsers remain untested.
 
 ## Supported models
 
@@ -276,13 +290,20 @@ needs no extra parts: the pull-up for the ESC's open-collector TX line is switch
 
 ## B. Arduino Uno / Nano as the adapter
 
+> **Electrical warning — untested:** Uno/Nano USB-serial lines use **5 V logic**.
+> The ESC UART's 5 V tolerance is unverified. **Do not connect UART lines directly.**
+> A suitable **3.3 V level shifter is required** on the UART connection, or use a
+> **3.3 V USB-UART adapter** instead. Verify signal voltages and common ground with
+> a multimeter. Holding RESET low does not change USB-serial logic voltage.
+
 ![Arduino Uno wiring](docs/wiring-uno-bridge.svg)
 
 An Uno has too little memory to hold the firmware (32 KB, while the image is ~140 KB). But its USB
 chip is a USB-UART adapter. Connect **RESET to GND** to keep the ATmega silent. Pins 0 and 1 then go
 straight to the USB chip, and bw-flasher on your PC uses the Uno's serial port like any dongle.
 
-1. Wire as in the picture: RESET–GND jumper, ESC TX → `TX→1`, ESC RX → `RX←0`, keep-alive → 3.3V, GND.
+1. Wire as in the picture: RESET–GND jumper, ESC TX → level shifter → `TX→1`, ESC RX ← level shifter ← `RX←0`, keep-alive → 3.3V, verified GND.
+   Set the UART converter's ESC side to 3.3 V and Uno/Nano side to 5 V; verify both directions.
    On a Nano, use the pins labelled TX1 / RX0.
 2. Plug the Uno into the PC and run bw-flasher on its port (`/dev/ttyACM0`, `/dev/ttyUSB0` or `COMx`).
 
@@ -314,20 +335,24 @@ With the wrong mapping the ESC never answers. The flasher shows empty responses 
 ([bw-flasher #32](https://github.com/scooterteam/bw-flasher/issues/32) shows the same symptom).
 So probe the wires first, using an ESP32 with MicroPython and `probe.py` copied to it:
 
-1. Connect ESP32 GND to the wire you think is ground.
-2. Connect every other unknown wire to a free GPIO, e.g. 4, 16, 17, 18. **Leave out any wire that
-   could carry battery voltage.** The ESP32 is a 3.3 V part.
+1. **Verify ground with a multimeter before connecting anything.** Do not guess from colours
+   or a probe reading. Then connect ESP32 GND to that verified ground.
+2. Measure every candidate signal relative to verified ground before connecting it to a GPIO,
+   e.g. 4, 16, 17, 18. **Never connect supply wires or any signal above 3.3 V.**
 3. Run:
    ```
    mpremote exec "import probe; probe.run((4, 16, 17, 18))"
    ```
 
-| Probe says | Wire is | Connect to |
+Probe verdicts are **hints, not proof** of identity or safe voltage. Verify the mapping before wiring.
+`probe.run()` restores the configured keep-alive pin high even if classification or reporting fails.
+
+| Probe says | Possible interpretation | Candidate connection after verification |
 |---|---|---|
-| `ESC TX (… status frames)` | ESC TX | ESP32 RX pin (GPIO16) |
-| `held high even with pull-down` | ESC RX (has its own pull-up) | ESP32 TX pin (GPIO5) |
-| `held low even with pull-up` | ground | GND |
-| `floating` and the scooter switches off | keep-alive line | GPIO17 (held high) |
+| `ESC TX (… status frames)` | Likely ESC TX | ESP32 RX pin (GPIO16) |
+| `held high even with pull-down` | Possible ESC RX or a supply | ESP32 TX pin (GPIO5), only after voltage verification |
+| `held low even with pull-up` | Driven low or possible ground | GND only after independent multimeter verification |
+| `floating` and the scooter switches off | Possible keep-alive line | GPIO17 (held high), after verification |
 
 ## Troubleshooting
 
@@ -375,19 +400,61 @@ that the image arrives byte for byte and that both flashers send identical traff
 no real firmware is included or required. LEQI tests cover both body variants, byte-identical TX,
 reconstructed firmware, virtual-clock delays, retries, malformed replies and bounded reads:
 
+Use Python 3.12, Git and **Node.js >= 20**. From a clean source checkout, install
+pytest in an isolated environment and fetch the same upstream revision as CI:
+
+```sh
+python3 -m venv .venv
+# POSIX:
+. .venv/bin/activate
+# Windows PowerShell instead: .venv\Scripts\Activate.ps1
+python -m pip install pytest==8.4.2
+git clone https://github.com/scooterteam/bw-flasher.git upstream-bw-flasher
+git -C upstream-bw-flasher checkout 8baeea1362494dd233ad993b1bfd27367d7dbdcb
+# POSIX:
+export BW_FLASHER_SRC="$PWD/upstream-bw-flasher"
+# Windows PowerShell instead: $env:BW_FLASHER_SRC = "$PWD/upstream-bw-flasher"
+python -m pytest -q tests
+node --test web/test/*.mjs
 ```
-BW_FLASHER_SRC=path/to/bw-flasher python -m pytest -q tests
-# Optional: repeat against your own image
-BW_FIRMWARE=patched.bin BW_FLASHER_SRC=path/to/bw-flasher python -m pytest -q tests
-```
+
+Keep `upstream-bw-flasher/` out of commits (or clone it outside this checkout and set the path).
+Alternatively, with [uv](https://docs.astral.sh/uv/) installed, replace the pytest installation
+and invocation with `uvx --with pytest==8.4.2 pytest -q tests` after setting `BW_FLASHER_SRC`.
+No upstream dependencies are needed: tests stub the desktop serial interface. To test your own
+image, set `BW_FIRMWARE` to its `.bin` path using your shell's environment syntax; never commit it.
+
+The public interfaces are `flasher.flash(path)`, Brightway `bwflash.info()` / `bwflash.flash(path)`,
+LEQI `leqiflash.info()` / `leqiflash.flash(path)`, GPIO constants in `bwflash.py`, and the browser UIs.
+`wifi.txt` stores the local AP password; `webui.disabled` opts out of Wi-Fi. The HTTP API and raw
+REPL programs are internal to the paired pages and may change before 1.0.
 
 ## Risks
 
 Flashing ESC firmware can brick the controller. Use only images made for your exact model and keep
 the stock image. Recovery from an interrupted flash has not been tested with this project.
 
-## License and credits
+## Contributing
 
-The protocol, key generation and flashing sequence come from
-[ScooterTeam bw-flasher](https://github.com/scooterteam/bw-flasher) (commit `8baeea1`), licensed
-CC BY-NC-SA 4.0. This port uses the same license: see [LICENSE](LICENSE). Non-commercial use only.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for tests and hardware reports,
+[SECURITY.md](SECURITY.md) for private vulnerability reports, and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community expectations.
+Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
+## Licences and credits
+
+This port is a derivative of [ScooterTeam bw-flasher](https://github.com/scooterteam/bw-flasher)
+(commit `8baeea1362494dd233ad993b1bfd27367d7dbdcb`). Copyright (C) 2024-2025 ScooterTeam.
+Modified: ported to MicroPython by Berkayr, 2026. The port remains **CC BY-NC-SA 4.0**:
+see [LICENSE](LICENSE). Non-commercial use, attribution and share-alike terms apply.
+Changes include streaming Brightway/LEQI ports, ESP32 UART handling, keep-alive/probe,
+telemetry, battery guards, offline Wi-Fi UI, USB browser UI and installer tooling.
+
+The installer also contains **unmodified MicroPython 1.29.0 (MIT)** and ESP-IDF/third-party
+components under their own licences; CC BY-NC-SA does not relicense them. The builder writes
+`web/firmware/NOTICE.txt` beside the image with attribution, the pinned MicroPython licence text
+and ESP-IDF licence pointers, and embeds a short `NOTICE.txt` with the full MIT grant in LittleFS.
+See [MicroPython's licence inventory](https://github.com/micropython/micropython/blob/v1.29.0/LICENSE)
+and [ESP-IDF's component licences](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/COPYRIGHT.html).
+**ESP Web Tools 10.5.2 (Apache-2.0)** is loaded from the CDN, rather than embedded in the image.
+**esptool and littlefs-python are build tools only**, not runtime dependencies of this port.

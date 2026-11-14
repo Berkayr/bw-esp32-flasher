@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640" font-family="Segoe UI, Helvetica, Arial, sans-serif">
-  <rect x="0" y="0" width="960" height="640" rx="18" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 700" width="960" height="700" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="960" height="700" rx="18" fill="#ffffff"/>
   <text x="40" y="52" font-size="26" font-weight="700" fill="#1b1f24">Arduino Uno as the USB-UART adapter</text>
   <text x="40" y="80" font-size="15" fill="#57606a">Use with bw-flasher on your PC · dashboard unplugged · scooter switched ON</text>
   <rect x="790" y="30" width="130" height="30" rx="15" fill="#fff1c2"/><text x="855" y="50" text-anchor="middle" font-size="13" font-weight="600" fill="#9a6700">untested</text>
@@ -61,16 +61,24 @@
   </g>
   <g stroke="#d1242f" stroke-width="4" stroke-linecap="round"><line x1="724" y1="485" x2="744" y2="505"/><line x1="744" y1="485" x2="724" y2="505"/></g>
 
+  <rect x="660" y="176" width="88" height="102" rx="5" fill="#fff1c2" stroke="#9a6700"/>
+  <g font-size="12" text-anchor="middle" fill="#1b1f24">
+    <text x="704" y="198">REQUIRED</text><text x="704" y="218">5 V ↔ 3.3 V</text>
+    <text x="704" y="238">UART level</text><text x="704" y="258">shifter</text>
+  </g>
   <!-- cable -->
   <rect x="760" y="170" width="40" height="350" rx="8" fill="#3d444d"/>
   <text x="780" y="545" text-anchor="middle" font-size="12" fill="#57606a">M7 plug</text>
   <g font-size="14" fill="#1b1f24">
-    <text x="815" y="196" font-weight="700">green</text><text x="815" y="213" font-size="12" fill="#57606a">ESC TX → TX→1</text>
-    <text x="815" y="251" font-weight="700">yellow</text><text x="815" y="268" font-size="12" fill="#57606a">ESC RX → RX←0</text>
+    <text x="815" y="196" font-weight="700">green</text><text x="815" y="213" font-size="12" fill="#57606a">ESC TX via shifter</text>
+    <text x="815" y="251" font-weight="700">yellow</text><text x="815" y="268" font-size="12" fill="#57606a">ESC RX via shifter</text>
     <text x="815" y="381" font-weight="700">blue</text><text x="815" y="398" font-size="12" fill="#57606a">keep HIGH → 3.3V</text>
     <text x="815" y="436" font-weight="700">black</text><text x="815" y="453" font-size="12" fill="#57606a">GND</text>
     <text x="815" y="491" font-weight="700" fill="#d1242f">red</text><text x="815" y="508" font-size="12" fill="#d1242f">do NOT connect</text>
   </g>
-  <text x="40" y="585" font-size="13" fill="#57606a">RESET→GND keeps the Uno's own chip silent, so its USB chip talks straight to pins 0 and 1.</text>
+  <text x="40" y="585" font-size="13" fill="#57606a">RESET→GND keeps the Uno's own chip silent, its 5 V USB chip uses pins 0 and 1 through the required level shifter.</text>
   <text x="40" y="606" font-size="13" fill="#57606a">Pin names are from the Uno's side: the ESC's TX goes to "TX→1". Same on a Nano (pins TX1 / RX0).</text>
+  <text x="40" y="637" font-size="15" font-weight="700" fill="#d1242f">WARNING: Uno/Nano UART is 5 V; ESC tolerance is unverified. Never connect directly.</text>
+  <text x="40" y="662" font-size="14" fill="#d1242f">Use a 3.3 V level shifter on UART lines, or a 3.3 V USB-UART adapter. Untested.</text>
+  <text x="40" y="684" font-size="13" fill="#57606a">Verify ground and both signal voltages with a multimeter before connecting the ESC.</text>
 </svg>
