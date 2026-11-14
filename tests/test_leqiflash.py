@@ -233,7 +233,8 @@ def test_detection_matches_upstream(tmp_path, monkeypatch, clock, kind):
 
 
 @pytest.mark.parametrize('family', ['Brightway', 'LEQI', 'Unknown'])
-def test_dispatch_without_opening_uart(tmp_path, monkeypatch, family):
+@pytest.mark.parametrize('progress', [None, lambda done, total: None])
+def test_dispatch_without_opening_uart(tmp_path, monkeypatch, family, progress):
     if family == 'Brightway':
         path = synthetic_firmware(tmp_path)
     else:
@@ -242,14 +243,14 @@ def test_dispatch_without_opening_uart(tmp_path, monkeypatch, family):
             open(path, 'wb').write(b'bad')
     calls = []
     target = bwflash if family == 'Brightway' else leqiflash
-    monkeypatch.setattr(target, 'flash', lambda path, debug: calls.append((path, debug)))
+    monkeypatch.setattr(target, 'flash', lambda path, debug, progress: calls.append((path, debug, progress)))
     if family == 'Unknown':
         with pytest.raises(bwflash.FlashError, match='preflight: unknown'):
             flasher.flash(path)
         assert not calls
     else:
-        flasher.flash(path, debug=True)
-        assert calls == [(path, True)]
+        flasher.flash(path, debug=True, progress=progress)
+        assert calls == [(path, True, progress)]
 
 
 def test_crc_and_preflight_failures(tmp_path):

@@ -15,7 +15,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install pytest
-      - run: python -m compileall -q esp32 tests
+      - run: python -m compileall -q esp32 tools tests
+      - run: node --test web/test/*.mjs
       - run: python -m pytest -q tests
         env:
           BW_FLASHER_SRC: ${{ github.workspace }}/upstream-bw-flasher

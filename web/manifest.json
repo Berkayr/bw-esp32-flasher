@@ -1,0 +1,16 @@
+{
+  "name": "ESP32 scooter flasher",
+  "version": "MicroPython 1.29.0",
+  "new_install_prompt_erase": true,
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "firmware/bw-esp32-flasher.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}

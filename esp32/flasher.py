@@ -27,11 +27,11 @@ def detect_firmware_type(path):
         raise bwflash.FlashError('preflight: cannot read image; check file path and filesystem: ' + str(exc))
 
 
-def flash(path, debug=False):
+def flash(path, debug=False, progress=None):
     family = detect_firmware_type(path)
     if family == 'Brightway':
-        return bwflash.flash(path, debug=debug)
+        return bwflash.flash(path, debug=debug, progress=progress)
     if family == 'LEQI':
         import leqiflash
-        return leqiflash.flash(path, debug=debug)
+        return leqiflash.flash(path, debug=debug, progress=progress)
     raise bwflash.FlashError('preflight: unknown firmware family; select a complete raw Brightway or LEQI .bin')

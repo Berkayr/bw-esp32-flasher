@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>ESP32 scooter flasher · USB</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="https://unpkg.com/esp-web-tools@10.5.2/dist/web/install-button.js?module"></script>
+<script type="module" src="app.js"></script></head>
+<body><main><h1>ESP32 scooter flasher</h1><p>Computer · USB · keep power connected</p>
+<p id="unsupported" class="warn" role="alert" hidden>Web Serial is not supported here. Use Chrome or Edge on a computer with HTTPS (or localhost), or use the phone Wi-Fi mode after installing the board.</p>
+<p id="status" role="status" aria-live="polite">Install once, then connect your ESP32.</p>
+<section><h2>1. Install the ESP32 (once)</h2>
+<p>Use a classic ESP32-WROOM-32 with exactly 4 MiB flash, a USB data cable and Chrome/Edge on a computer. C3/S2/S3 and other flash sizes are not supported by this image.</p>
+<p>Disconnect the controller wires during installation. Installation replaces the ESP32 software and files. Choose erase when prompted. This installs the flasher on the ESP32; it does not flash the scooter.</p>
+<esp-web-install-button id="installer" manifest="manifest.json"><button slot="activate" id="install">Install ESP32 flasher</button><span slot="unsupported">Installer requires desktop Chrome/Edge.</span></esp-web-install-button>
+<p id="installHelp">Maintainer: build and publish the installer image before sharing this page.</p>
+<p>If no USB port appears, try a data cable and the USB chip vendor's driver:
+<a href="https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers" target="_blank" rel="noopener noreferrer">CP210x (Silicon Labs)</a> or
+<a href="https://www.wch-ic.com/downloads/CH341SER_EXE.html" target="_blank" rel="noopener noreferrer">CH340 (WCH, Windows)</a>. On Linux, ensure your user has serial-port permission.</p></section>
+<section><h2>2. Connect over USB</h2><p>After installation, close the installer dialog to release its serial port. Connect below and select the same USB port. An installed board can skip step 1.</p>
+<button id="connect">Connect ESP32</button><button id="disconnect" disabled>Disconnect USB</button>
+<p>Connecting interrupts the phone web server and turns Wi-Fi off for clean scooter communication. Do not connect while any flash is running. Disconnect releases USB; press ESP32 RESET afterwards to restore phone Wi-Fi mode.</p></section>
+<section><h2>3. Wire the controller</h2><p>Disconnect the dashboard. With USB connected, switch the scooter on and connect verified ground first.</p>
+<table><tr><th>ESC wire</th><th>ESP32</th><th>Our cable colour</th></tr>
+<tr><td>GND</td><td>GND</td><td>Black</td></tr><tr><td>ESC RX</td><td id="txPin">GPIO5 (TX)</td><td>Yellow</td></tr>
+<tr><td>ESC TX</td><td id="rxPin">GPIO16 (RX)</td><td>Green</td></tr><tr><td>Keep-alive</td><td id="keepPin">GPIO17 (high)</td><td>Blue</td></tr>
+<tr><td>Power</td><td>NEVER connect</td><td>Red</td></tr></table>
+<p class="warn">Colours vary. The guide's M7 colours are GND yellow, RX white, TX green, keep-alive black. Red is power, never a signal. GPIOs accept only 3.3 V. Measure unknown wires first.</p>
+<p><a href="docs/wiring-esp32.svg" target="_blank">Open wiring picture</a></p>
+<details><summary>Wire probe wizard</summary><p>Use when the connection check fails. It changes GPIO modes and may switch the scooter off. It cannot prove an unknown wire is safe.</p>
+<ol><li>Measure voltages first. Leave out red, supply and battery-voltage wires.</li><li>Connect ESP32 GND to verified ground, then unknown safe wires to your chosen GPIOs.</li><li>Enter 1–6 distinct GPIO numbers and run the probe.</li></ol>
+<label for="pins">GPIOs (comma separated)</label><input id="pins" value="4,16,17,18" inputmode="numeric">
+<small>Allowed: 4, 5, 13, 14, 16–19, 21–23, 25–27, 32, 33.</small>
+<label><input id="probeSafe" type="checkbox">I measured the wires; none carries more than 3.3 V.</label>
+<button id="probe" type="button">Probe these wires</button>
+<p>Data/status frames → ESC TX → ESP32 RX. Held high → possible ESC RX, but could be a supply: verify first. Held low → possible ground or driven-low line. Floating → RX or keep-alive; if the scooter switches off, investigate keep-alive. Activity without Brightway frames is inconclusive, especially for LEQI.</p>
+<p>After probing, restore the normal wiring above and run Check connection again. Keep-alive is restored high when the probe ends.</p><pre id="probeResult" role="status"></pre></details></section>
+<section><h2>4. Check connection</h2><label for="family">Controller family (check your scooter model)</label>
+<select id="family"><option>Brightway</option><option>LEQI</option></select>
+<p><small>Brightway: 3 Lite, 4, 4 Lite, 4 Ultra, 4 Pro 2nd Gen, 5, 5 Pro, 5 Max. LEQI: 4 Lite 2nd Gen, 5 Plus, 5 Elite, 6, 6 Lite. Compatibility is not guaranteed; LEQI is hardware-untested.</small></p>
+<button id="check">Check connection (read-only)</button><pre id="device">No controller read yet.</pre>
+<button id="light">Light test (5 s)</button><small>Brightway only. Tail light should turn on; throttle and brake are fixed at zero.</small></section>
+<section><h2>5. Data</h2><p id="dataSupport">Verified on Xiaomi 5 / Brightway ESC 0015 only. Other models unverified. Data and light test are not supported for LEQI.</p>
+<button id="refresh">Refresh data and device information</button><label><input id="autoRefresh" type="checkbox">Auto-refresh live data every 2 seconds while idle</label>
+<div id="batteryGauge" aria-live="polite">— %</div><meter id="batteryMeter" min="0" max="100" value="0" aria-label="Battery percent" hidden></meter>
+<pre id="liveData">No readings yet.</pre><pre id="deviceData"></pre>
+<label><input id="showSerials" type="checkbox">Show private serial numbers and UID</label><pre id="serials" class="private" hidden></pre></section>
+<section><h2>6. Upload and flash</h2><label for="file">Raw patched .bin for your exact scooter (4 KiB–512 KiB)</label><input id="file" type="file" accept=".bin,application/octet-stream">
+<button id="upload">Upload and inspect</button><p id="image">No validated image.</p>
+<p class="warn">A wrong image or lost power can brick the controller. Keep the stock image. Do not move wires, press the scooter's power button, close this tab or disconnect either power supply during flashing.</p>
+<button id="review">Review flash</button><div id="confirmBox" hidden><p id="reviewText"></p>
+<label><input id="agree" type="checkbox">I checked the model ID and image compatibility, and both power supplies are stable.</label>
+<p id="batteryWarning" class="warn" role="alert"></p><label id="overrideLabel" hidden><input id="batteryOverride" type="checkbox">I understand the battery/power-loss risk and explicitly override this warning.</label>
+<button id="flash">Confirm and flash controller</button><button id="cancel">Cancel</button></div>
+<progress id="progress" max="1" value="0" aria-label="Upload or flash progress"></progress><p id="packets">No transfer running.</p>
+<pre id="result" role="status" aria-live="polite"></pre><pre id="error" class="error" role="alert"></pre>
+<p><small>Flashing takes about 4 minutes on the tested Xiaomi 5. Packet N/N still requires finalization. Wait for the final success message. If USB disconnects, keep power on and wait at least 10 minutes before reconnecting: the board may continue flashing. Never reset a running flash.</small></p></section>
+<p>Serial numbers stay in this tab's memory, hidden until requested. They are never logged, stored or sent to a server. The installer loads ESP Web Tools from a pinned CDN version; controller operations use only USB.</p>
+</main></body></html>

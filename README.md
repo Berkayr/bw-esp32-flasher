@@ -15,6 +15,65 @@ was the reason our first evening of flashing failed.
 
 Make the firmware image with [bw-patcher](https://github.com/scooterteam/bw-patcher) as usual.
 
+## E. PC browser (no install)
+
+Open **`https://<user>.github.io/bw-esp32-flasher/`** in desktop Chrome or Edge
+(owner replaces `<user>` and publishes later; this private repository is not hosted yet).
+Plug in a classic **ESP32-WROOM-32 with exactly 4 MiB flash** using a USB data cable.
+No Python, mpremote or app installation is needed on the user's computer.
+
+1. Disconnect the scooter wires. Click **Install ESP32 flasher** once, select the USB port,
+   and choose erase when prompted. This replaces the board's files and installs MicroPython
+   plus all flasher modules. Driver links for CP210x and CH340 are on the page.
+2. Close the installer's dialog to release the port. Click **Connect ESP32** on the same page.
+   An already installed board can skip installation. Connecting stops the phone web server;
+   Wi-Fi is switched off before every scooter operation to avoid UART corruption.
+3. Follow **Wire**, choose the controller family, **Check connection**, and optionally run
+   the **Light test**, **Wire probe** and **Data** tools. Private serials/UID stay hidden until
+   toggled; no controller data is logged, stored or sent to a server.
+4. Upload a patched raw `.bin` for your exact scooter. Upload is chunked, size/CRC checked
+   and family-preflight validated before replacing `fw.bin`. Review compatibility and power,
+   then explicitly confirm flashing. Brightway battery is read for review and again on the
+   board immediately before flash. Below `telemetry.LOW_BATTERY` (20%), or unreadable,
+   requires the same explicit risk override as the phone page. LEQI telemetry is unsupported.
+5. Keep the tab and both power supplies connected until final success. Packet N/N still
+   requires finalization. On timeout or USB loss, the board may continue: keep power on,
+   wait at least 10 minutes before reconnecting, and inspect the controller before retrying.
+   **Never connect another client, reset, reinstall or interrupt during a flash.**
+
+Firefox, Safari and mobile browsers show guidance to desktop Chrome/Edge or phone Wi-Fi mode.
+After disconnecting USB control, press ESP32 RESET to restart phone Wi-Fi mode, once no flash
+is running. Phone mode remains available from the same installed image.
+
+**Maintainer build and local preview** (not needed by end users):
+
+```sh
+python -m venv .venv
+# Activate .venv using your platform's command, then:
+python -m pip install -r tools/requirements-build.txt
+python tools/build_image.py
+python -m http.server -d web
+# Open http://localhost:8000 in desktop Chrome/Edge.
+node --test web/test/*.mjs
+```
+
+Localhost is a secure context for Web Serial. Remote hosting requires HTTPS.
+The build downloads and SHA-256 verifies **MicroPython ESP32_GENERIC 1.29.0** and uses
+**littlefs-python 0.15.0** and **esptool 5.1.0** to produce
+`web/firmware/bw-esp32-flasher.bin` (4 MiB, flash offset 0). See
+[build details and pinned hashes](tools/README.md). The output is ignored and is not committed.
+Publish the **contents of `web/`**, including the generated `firmware/` directory, as the Pages
+artifact so that `index.html` is at the site's root. There is no publishing workflow yet.
+Without the built image, installation is disabled with an explanation; installed boards can
+still connect. To update modules, rebuild and reinstall; installation erases previous files.
+
+ESP Web Tools **10.5.2** is the sole external script, loaded from an exact-version CDN URL.
+Its installer dependencies also come from the CDN; runtime USB controls are local ES modules.
+No analytics or remote controller API is used. This desktop flow has automated fake-USB and
+host-side checks, but **real desktop browser + ESP32 installation, boot/mount, upload, light,
+probe, battery guard and full scooter flash remain hardware-untested**. The existing phone
+hardware results do not establish USB-browser compatibility.
+
 ## Pick your setup
 
 | Setup | You need | Status |
@@ -22,6 +81,7 @@ Make the firmware image with [bw-patcher](https://github.com/scooterteam/bw-patc
 | **A. ESP32 alone** (this repo) | any ESP32-WROOM-32 dev board | ✅ tested: Xiaomi Scooter 5, full flash in 251 s |
 | **B. Arduino Uno / Nano as adapter** + bw-flasher | Uno or Nano, 1 extra jumper wire | ⚠️ untested |
 | **C. Phone only (Wi-Fi)** | ESP32-WROOM-32, powerbank, phone | ✅ tested with a PC as the Wi-Fi client: full flash on a Xiaomi 5; phone browsers untested |
+| **E. PC browser (no install)** | ESP32-WROOM-32 (4 MiB), desktop Chrome/Edge | ⚠️ USB browser hardware-untested |
 | D. USB-UART dongle + bw-flasher | CH340/CP2102 adapter | ✅ works (the usual way) |
 
 All setups need a cable to the ESC's dashboard connector and some Dupont jumper wires.
@@ -46,7 +106,7 @@ The connection check reads the ESC until two replies agree, for the same reason.
    mpremote reset
    ```
    If previously using USB-only mode, remove `webui.disabled` via the REPL before resetting.
-   An out-of-box ESP32 still needs this initial installation; a turnkey installer is a later task.
+   An out-of-box ESP32 needs this initial installation; the PC browser installer above can do it without command-line tools.
 2. Power the board from a powerbank. Join **`bw-flasher-XXXX`** (last two AP MAC bytes).
    The default WPA2 password is **`bw-flasher-setup`**. Change `AP_PASSWORD` in `webui.py`
    before copying if other people could be nearby. Stay on this Wi-Fi when the phone warns
