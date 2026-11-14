@@ -21,9 +21,67 @@ Make the firmware image with [bw-patcher](https://github.com/scooterteam/bw-patc
 |---|---|---|
 | **A. ESP32 alone** (this repo) | any ESP32-WROOM-32 dev board | ✅ tested: Xiaomi Scooter 5, full flash in 251 s |
 | **B. Arduino Uno / Nano as adapter** + bw-flasher | Uno or Nano, 1 extra jumper wire | ⚠️ untested |
-| C. USB-UART dongle + bw-flasher | CH340/CP2102 adapter | ✅ works (the usual way) |
+| **C. Phone only (Wi-Fi)** | ESP32-WROOM-32, powerbank, phone | ⚠️ partly tested: AP, upload, preflight and connection check on a real ESP32 + Xiaomi 5; flashing over Wi-Fi and phone browsers untested |
+| D. USB-UART dongle + bw-flasher | CH340/CP2102 adapter | ✅ works (the usual way) |
 
 All setups need a cable to the ESC's dashboard connector and some Dupont jumper wires.
+
+## C. Phone only (Wi-Fi)
+
+After a one-time USB installation, the ESP32 needs only power. The phone connects directly
+to its access point; no internet, app, CDN or desktop computer is needed during use.
+On a real ESP32 with a Xiaomi 5, the access point, a 141 KB upload (3.4 s), preflight and the
+connection check work. **Flashing over Wi-Fi and the page on Android Chrome / iPhone Safari are not tested yet.**
+
+1. Install **MicroPython 1.29 / ESP32_GENERIC** once (see setup A below). Copy all files:
+   ```
+   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/leqiflash.py :leqiflash.py + cp esp32/flasher.py :flasher.py + cp esp32/probe.py :probe.py + cp esp32/webui.py :webui.py + cp esp32/webui.html :webui.html + cp esp32/main.py :main.py
+   mpremote reset
+   ```
+   If previously using USB-only mode, remove `webui.disabled` via the REPL before resetting.
+   An out-of-box ESP32 still needs this initial installation; a turnkey installer is a later task.
+2. Power the board from a powerbank. Join **`bw-flasher-XXXX`** (last two AP MAC bytes).
+   The default WPA2 password is **`bw-flasher-setup`**. Change `AP_PASSWORD` in `webui.py`
+   before copying if other people could be nearby. Stay on this Wi-Fi when the phone warns
+   that it has no internet, then open **http://192.168.4.1** in the regular browser.
+3. Follow the page's wiring guide. Select **Brightway** or **LEQI** for your controller and
+   tap **Check connection**. It reads Brightway UID/version or LEQI version/region.
+   LEQI does not supply a UID through this command. No invented fault-code interpretations are shown.
+4. Select your patched raw **`.bin`** from the phone and tap **Upload and inspect**.
+   The board streams it to disk in chunks of at most 1024 bytes and checks free space first.
+   Limit: **4 KiB–512 KiB**; ZIP/TEA containers are unsupported. Family preflight runs before
+   promotion from the temporary file. Read family, size and model ID (when present).
+   A model ID is informational: it does **not** prove compatibility with your scooter.
+5. Tap **Review flash**, check compatibility and stable power, then **Confirm and flash controller**.
+   Only one upload, connection check, probe or flash runs at a time. The page shows packet n/N;
+   reaching N/N still requires finalization. Wait for the final success or actionable error.
+   **Keep both power supplies connected and do not touch the wires or scooter power button.**
+   If the phone disconnects, the board continues. Rejoin Wi-Fi and reopen the page to read
+   progress/result. State lasts until the next operation or ESP32 restart, not across power loss.
+6. If the connection fails, use the **wire probe wizard**. Measure wires first: never connect
+   power/battery voltage to GPIOs. Select 1–6 supported GPIOs. The page explains each verdict;
+   an ambiguous high/floating/activity reading is not a definitive wire identification.
+   Probing can interrupt keep-alive and switch off the scooter. GPIO17 is restored high afterward;
+   restore normal wiring and check the connection again before flashing.
+
+**USB-only opt-out:** create a flag before reset:
+```
+mpremote exec "open('webui.disabled', 'w').close()"
+mpremote reset
+```
+Delete it with `mpremote exec "import os; os.remove('webui.disabled')"` and reset to enable Wi-Fi.
+Alternatively hold BOOT/GPIO0 low when `main.py` starts after reset; on classic ESP32, holding
+BOOT throughout a power-on reset enters the ROM downloader instead, so the flag is the reliable
+REPL opt-out. GPIO17 is held high before starting the UI. Ctrl-C over USB can interrupt the server;
+use the flag for routine USB work. Never reset or interrupt the board during a flash.
+
+The HTTP API exposes only fixed paths, with bounded headers/control bodies and raw uploads;
+it accepts no client-supplied filesystem path. Browser writes require a per-boot token and same-origin
+requests. WPA2 protects the radio link; HTTP is local and has no separate user accounts or TLS.
+Anyone with the AP password can control the board. There is no upstream Wi-Fi connection or telemetry.
+Interrupted uploads are discarded; a previous image is never overwritten by a partial/invalid upload.
+After reboot, upload and check the controller again before flashing (old on-disk images are not auto-selected).
+If disk space is exhausted, remove unused files via USB; the phone does not offer arbitrary file deletion.
 
 ## Supported models
 
@@ -64,9 +122,13 @@ listing a family and cable does not guarantee an available or compatible patched
    esptool --chip esp32 erase_flash
    esptool --chip esp32 write_flash -z 0x1000 ESP32_GENERIC-<version>.bin
    ```
-2. **Copy the files**, together with your patched firmware renamed to `fw.bin`:
+2. **Select USB-only mode** (the Wi-Fi UI is the default with the full installation above):
    ```
-   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/leqiflash.py :leqiflash.py + cp esp32/flasher.py :flasher.py + cp esp32/probe.py :probe.py + cp esp32/main.py :main.py + cp patched.bin :fw.bin
+   mpremote exec "open('webui.disabled', 'w').close()"
+   ```
+   **Copy the files**, together with your patched firmware renamed to `fw.bin`:
+   ```
+   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/leqiflash.py :leqiflash.py + cp esp32/flasher.py :flasher.py + cp esp32/probe.py :probe.py + cp esp32/webui.py :webui.py + cp esp32/webui.html :webui.html + cp esp32/main.py :main.py + cp patched.bin :fw.bin
    mpremote reset
    ```
    `main.py` holds GPIO17 high from power-up, so the ESC doesn't switch off when you connect the blue wire.
@@ -181,6 +243,9 @@ The image is streamed from the ESP32's filesystem, so it doesn't have to fit in 
 LEQI validation reads at most 1024 bytes at a time (density sample at most 896 bytes),
 transfer reads 128 bytes, and detection scans in 4096-byte blocks. No new runtime dependency
 is required. Hardware heap use on MicroPython 1.29/classic ESP32 remains unmeasured.
+
+`tests/test_webui.py` covers bounded HTTP parsing, streaming uploads, preflight, job locking,
+GPIO restrictions, progress callbacks, and a disconnected phone during a fake flash.
 
 `tests/test_bwflash.py` and `tests/test_leqiflash.py` run both this port and the original bw-flasher against a fake ESC. It checks
 that the image arrives byte for byte and that both flashers send identical traffic. Tests generate a small synthetic image by default;

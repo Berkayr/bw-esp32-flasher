@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 scooter flasher</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101923;color:#edf3fa;font:17px system-ui,sans-serif;line-height:1.5}main{max-width:640px;margin:auto;padding:18px}h1{font-size:1.7rem}h2{font-size:1.2rem}section{background:#1c2938;border-radius:14px;padding:18px;margin:16px 0}button,input,select{font:inherit;min-height:48px;max-width:100%;border-radius:8px;padding:10px}button{background:#9ed8ff;color:#102132;border:0;font-weight:700;margin:8px 0;cursor:pointer;width:100%}button:disabled{opacity:.45;cursor:wait}input,select{width:100%;background:#fff;color:#111}label{display:block;margin:10px 0}input[type=checkbox]{width:24px;min-height:24px;vertical-align:middle;margin-right:10px}table{width:100%;border-collapse:collapse;font-size:.9rem}td,th{text-align:left;border-bottom:1px solid #536375;padding:8px 4px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}progress{width:100%;height:24px}.warn{color:#ffcf86}.error{color:#ffb7b7}small{display:block}#confirmBox{border:2px solid #ffcf86;padding:12px;margin-top:10px}[hidden]{display:none!important}:focus-visible{outline:3px solid #ffc865;outline-offset:3px}
+</style>
+<main><h1>ESP32 scooter flasher</h1><p>Phone only · offline · keep power connected</p>
+<p id="network" role="status" aria-live="polite">Connecting to the board…</p>
+<section><h2>1. Wire the controller</h2>
+<p>Disconnect the dashboard. Power the ESP32 from a powerbank; switch the scooter on. Connect a verified ground first.</p>
+<table><tr><th>ESC wire</th><th>ESP32</th><th>Our cable colour</th></tr>
+<tr><td>GND</td><td>GND</td><td>Black</td></tr><tr><td>ESC RX</td><td id="txPin">GPIO5 (TX)</td><td>Yellow</td></tr>
+<tr><td>ESC TX</td><td id="rxPin">GPIO16 (RX)</td><td>Green</td></tr><tr><td>Keep-alive</td><td id="keepPin">GPIO17 (high)</td><td>Blue</td></tr>
+<tr><td>Power</td><td>NEVER connect</td><td>Red</td></tr></table>
+<p class="warn">Colours vary. The guide's M7 colours are GND yellow, RX white, TX green, keep-alive black. Red is power, never a signal. GPIOs accept only 3.3 V. Measure unknown wires first.</p></section>
+<section><h2>2. Check connection</h2><label for="family">Controller family (choose your model's family)</label>
+<select id="family"><option>Brightway</option><option>LEQI</option></select>
+<p><small>Brightway: 3 Lite, 4, 4 Lite, 4 Ultra, 4 Pro 2nd Gen, 5, 5 Pro, 5 Max. LEQI: 4 Lite 2nd Gen, 5 Plus, 5 Elite, 6, 6 Lite. Compatibility is not guaranteed; LEQI is hardware-untested.</small></p>
+<button id="check" type="button">Check connection (read-only)</button><pre id="device">No controller read yet.</pre></section>
+<section><h2>3. Upload firmware</h2><label for="file">Raw patched .bin for your exact scooter</label><input id="file" type="file" accept=".bin,application/octet-stream">
+<button id="upload" type="button">Upload and inspect</button><p id="image">No validated image. Limit: 512 KiB.</p></section>
+<section><h2>4. Flash</h2><p class="warn">A wrong image or lost power can brick the controller. Keep the stock image. Do not move wires, press the scooter's power button or disconnect either power supply.</p>
+<button id="review" type="button" disabled>Review flash</button>
+<div id="confirmBox" hidden><p id="reviewText"></p><label><input id="agree" type="checkbox">I checked the model ID and image compatibility, and both power supplies are stable.</label>
+<button id="flash" type="button" disabled>Confirm and flash controller</button><button id="cancel" type="button">Cancel</button></div>
+<progress id="progress" value="0" max="1" aria-label="Flash packet progress"></progress><p id="packets">Packet 0/0</p>
+<pre id="result" role="status" aria-live="polite"></pre><pre id="error" class="error" role="alert"></pre>
+<p><small>A phone disconnect does not stop flashing. Rejoin this Wi-Fi and reopen this page to read the result. Results stay until the next operation or board restart.</small></p></section>
+<section><h2>Wire probe wizard</h2><p>Use when the connection check fails. It changes GPIO modes and may switch the scooter off. It cannot prove an unknown wire is safe.</p>
+<ol><li>Measure voltages first. Leave out red, supply and battery-voltage wires.</li><li>Connect ESP32 GND to verified ground, then unknown safe wires to your chosen GPIOs.</li><li>Enter 1–6 distinct GPIO numbers and run the probe.</li></ol>
+<label for="pins">GPIOs (comma separated)</label><input id="pins" value="4,16,17,18" inputmode="numeric">
+<small>Allowed: 4, 5, 13, 14, 16–19, 21–23, 25–27, 32, 33.</small>
+<label><input id="probeSafe" type="checkbox">I measured the wires; none carries more than 3.3 V.</label>
+<button id="probe" type="button">Probe these wires</button>
+<p>Data/status frames → ESC TX → ESP32 RX. Held high → possible ESC RX, but could be a supply: verify first. Held low → possible ground or driven-low line. Floating → RX or keep-alive; if the scooter switches off, investigate keep-alive. Activity without Brightway frames is inconclusive, especially for LEQI.</p>
+<p>After probing, restore the normal wiring above and run Check connection again. Keep-alive is restored high when the probe ends.</p></section>
+</main>
+<script>
+'use strict';
+const el=id=>document.getElementById(id);
+let state=null, token='', online=false, localBusy=false, confirmedImage=null;
+function ready(){return online&&state&&!state.busy&&!localBusy;}
+function clearConfirmation(){confirmedImage=null;el('confirmBox').hidden=true;el('agree').checked=false;el('flash').disabled=true;}
+function controls(){
+ ['check','upload','probe','family','file','pins'].forEach(id=>el(id).disabled=!ready());
+ const compatible=state&&state.image&&state.info&&state.image.family===state.info.family;
+ el('review').disabled=!ready()||!compatible;
+ el('flash').disabled=!ready()||!el('agree').checked||!state.image||confirmedImage!==state.image.id;
+}
+function render(s){
+ const previous=state;state=s;token=s.token;online=true;
+ el('network').textContent=s.busy?'Board busy: '+s.job+'. Keep power connected.':'Board connected · ready';
+ if(s.pins){el('txPin').textContent='GPIO'+s.pins[0]+' (TX)';el('rxPin').textContent='GPIO'+s.pins[1]+' (RX)';el('keepPin').textContent=s.pins[2]===null?'Disabled':'GPIO'+s.pins[2]+' (high)';}
+ el('device').textContent=s.info?'Last connection check\nFamily: '+s.info.family+'\nUID: '+(s.info.uid||'Not available from this protocol')+'\nVersion: '+s.info.version+(s.info.region?'\nRegion: '+s.info.region:''):'No successful controller read. Choose the family and check connection.';
+ el('image').textContent=s.image?s.image.family+' · '+s.image.size+' bytes · Model ID: '+(s.image.model_id||'not available')+'. An ID does not prove compatibility.':'No validated image. Upload a raw .bin (4 KiB to 512 KiB).';
+ el('progress').max=s.total||1;el('progress').value=s.done;el('packets').textContent='Packet '+s.done+'/'+s.total+(s.busy&&s.job==='flash'&&s.total&&s.done===s.total?' · finalizing, keep power on':'');
+ el('result').textContent=Array.isArray(s.result)?s.result.join('\n'):(s.result||'');el('error').textContent=s.error||'';
+ if(s.busy||!s.image||(previous&&previous.image&&previous.image.id!==s.image.id))clearConfirmation();
+ controls();
+}
+async function poll(){
+ try{const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('Status unavailable');render(await r.json());}
+ catch(e){online=false;el('network').textContent='Board unreachable. Rejoin bw-flasher Wi-Fi and stay on it without internet. A running flash continues.';controls();}
+ setTimeout(poll,1200);
+}
+async function send(path,data,raw=false){
+ localBusy=true;clearConfirmation();el('error').textContent='';controls();
+ try{const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':raw?'application/octet-stream':'application/json','X-Flasher-Token':token},body:raw?data:JSON.stringify(data)});const v=await r.json();if(!r.ok)throw Error(v.error||'Request failed');el('result').textContent='Accepted. Waiting for board status…';}
+ catch(e){el('error').textContent=e.message+' If a flash request lost its reply, check board status before retrying.';}
+ finally{localBusy=false;controls();}
+}
+el('check').onclick=()=>send('info',{family:el('family').value});
+el('upload').onclick=()=>{const f=el('file').files[0];if(!f||!f.name.toLowerCase().endsWith('.bin')||f.size<4096||f.size>524288){el('error').textContent='Choose a raw .bin between 4 KiB and 512 KiB.';return;}send('upload',f,true);};
+el('review').onclick=()=>{confirmedImage=state.image.id;el('reviewText').textContent='Flash '+state.image.family+', '+state.image.size+' bytes, model '+(state.image.model_id||'unknown')+' to the connected controller?';el('confirmBox').hidden=false;el('agree').checked=false;controls();};
+el('agree').onchange=controls;el('cancel').onclick=clearConfirmation;
+el('flash').onclick=()=>{if(ready()&&el('agree').checked&&confirmedImage===state.image.id)send('flash',{confirm:confirmedImage});};
+el('probe').onclick=()=>{const parts=el('pins').value.split(',').map(v=>v.trim());if(!el('probeSafe').checked||parts.some(v=>!/^\d+$/.test(v))){el('error').textContent='Confirm the measured voltages and enter comma-separated GPIO numbers.';return;}send('probe',{pins:parts.map(Number)});};
+controls();poll();
+</script></html>

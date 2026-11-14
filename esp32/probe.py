@@ -67,9 +67,13 @@ def classify(pin):
     return 'floating (follows pull, free=%.2f) -> ESC input: RX or keep-alive line' % free
 
 
-def run(pins=(4, 16, 17, 18)):
+def run(pins=(4, 16, 17, 18), report=None):
     for p in pins:
         try:
-            print('GPIO%d: %s' % (p, classify(p)))
+            verdict = classify(p)
+            if report is None:
+                print('GPIO%d: %s' % (p, verdict))
+            else:
+                report(p, verdict)
         finally:
             Pin(p, Pin.IN)

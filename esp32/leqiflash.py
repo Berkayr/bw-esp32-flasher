@@ -135,10 +135,11 @@ def valid_reply(response, command):
 
 
 class Flasher:
-    def __init__(self, link, fw=None, progress=None):
+    def __init__(self, link, fw=None, progress=None, packet_progress=None):
         self.k = link
         self.fw = fw
         self.progress = progress
+        self.packet_progress = packet_progress
         self.stage = 'connect'
 
     def info(self):
@@ -168,6 +169,8 @@ class Flasher:
                 self.k.log(self.stage + ': missing/invalid reply or rejected; check signal quality and image compatibility')
             if self.progress:
                 self.progress(int(number / total * 90))
+            if self.packet_progress:
+                self.packet_progress(number, total)
             time.sleep(0.044)
         if failed:
             raise FlashError('transfer: %d chunks had invalid/missing responses; check wiring, power and image compatibility before retrying' % failed)
@@ -185,14 +188,14 @@ class Flasher:
             self.progress(100)
 
 
-def _run(fw, debug):
+def _run(fw, debug, progress=None, log=print):
     stage = 'connect/UART'
     uart = None
     flasher = None
     try:
         uart = open_uart()
-        flasher = Flasher(Link(uart, debug=debug), fw,
-                          lambda value: print('progress %d%%' % value))
+        flasher = Flasher(Link(uart, log=log, debug=debug), fw,
+                          lambda value: log('progress %d%%' % value), progress)
         if fw is None:
             return flasher.info()
         return flasher.flash()
@@ -205,10 +208,10 @@ def _run(fw, debug):
             uart.deinit()
 
 
-def info(debug=False):
+def info(debug=False, log=print):
     """Read LEQI DeviceInfo without starting an update; returns (version, region)."""
-    return _run(None, debug)
+    return _run(None, debug, log=log)
 
 
-def flash(path, debug=False):
-    return _run(Firmware(path), debug)
+def flash(path, debug=False, progress=None, log=print):
+    return _run(Firmware(path), debug, progress, log)

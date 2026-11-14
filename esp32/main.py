@@ -4,3 +4,7 @@ from bwflash import KEEP_PIN
 
 if KEEP_PIN is not None:
     Pin(KEEP_PIN, Pin.OUT, value=1)
+
+if __name__ == '__main__':
+    import webui
+    webui.run()

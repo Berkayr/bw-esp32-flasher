@@ -415,19 +415,28 @@ def _progress(done, total):
     print('packet %d/%d (%d%%)' % (done, total, done * 100 // total))
 
 
-def info(debug=False):
+def info(debug=False, log=print):
     """Read UID and version only. Safe: writes nothing to the ESC."""
-    f = Flasher(Link(open_uart(), debug=debug))
-    f.connect()
-    return f.uid, f.version
+    uart = open_uart()
+    try:
+        f = Flasher(Link(uart, log=log, debug=debug))
+        f.connect()
+        return f.uid, f.version
+    finally:
+        uart.deinit()
 
 
-def flash(path, debug=False):
+def flash(path, debug=False, progress=None, log=print):
     fw = Firmware(path)
-    print('firmware', path, fw.size, 'bytes,', fw.total_packets, 'packets')
+    log('firmware', path, fw.size, 'bytes,', fw.total_packets, 'packets')
     if fw.model_id:
-        print('model ID:', fw.model_id)
-    f = Flasher(Link(open_uart(), debug=debug), fw, _progress)
-    t0 = time.time()
-    f.flash()
-    print('done in %d s' % (time.time() - t0))
+        log('model ID:', fw.model_id)
+    uart = open_uart()
+    try:
+        f = Flasher(Link(uart, log=log, debug=debug), fw,
+                    progress if progress is not None else _progress)
+        t0 = time.time()
+        f.flash()
+        log('done in %d s' % (time.time() - t0))
+    finally:
+        uart.deinit()
