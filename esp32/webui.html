@@ -2,7 +2,7 @@
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ESP32 scooter flasher</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#101923;color:#edf3fa;font:17px system-ui,sans-serif;line-height:1.5}main{max-width:640px;margin:auto;padding:18px}h1{font-size:1.7rem}h2{font-size:1.2rem}section{background:#1c2938;border-radius:14px;padding:18px;margin:16px 0}button,input,select{font:inherit;min-height:48px;max-width:100%;border-radius:8px;padding:10px}button{background:#9ed8ff;color:#102132;border:0;font-weight:700;margin:8px 0;cursor:pointer;width:100%}button:disabled{opacity:.45;cursor:wait}input,select{width:100%;background:#fff;color:#111}label{display:block;margin:10px 0}input[type=checkbox]{width:24px;min-height:24px;vertical-align:middle;margin-right:10px}table{width:100%;border-collapse:collapse;font-size:.9rem}td,th{text-align:left;border-bottom:1px solid #536375;padding:8px 4px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}progress{width:100%;height:24px}.warn{color:#ffcf86}.error{color:#ffb7b7}small{display:block}#confirmBox{border:2px solid #ffcf86;padding:12px;margin-top:10px}[hidden]{display:none!important}:focus-visible{outline:3px solid #ffc865;outline-offset:3px}
+*{box-sizing:border-box}body{margin:0;background:#101923;color:#edf3fa;font:17px system-ui,sans-serif;line-height:1.5}main{max-width:640px;margin:auto;padding:18px}h1{font-size:1.7rem}h2{font-size:1.2rem}section{background:#1c2938;border-radius:14px;padding:18px;margin:16px 0}button,input,select{font:inherit;min-height:48px;max-width:100%;border-radius:8px;padding:10px}button{background:#9ed8ff;color:#102132;border:0;font-weight:700;margin:8px 0;cursor:pointer;width:100%}button:disabled{opacity:.45;cursor:wait}input,select{width:100%;background:#fff;color:#111}label{display:block;margin:10px 0}input[type=checkbox]{width:24px;min-height:24px;vertical-align:middle;margin-right:10px}table{width:100%;border-collapse:collapse;font-size:.9rem}td,th{text-align:left;border-bottom:1px solid #536375;padding:8px 4px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}progress{width:100%;height:24px}.warn{color:#ffcf86}.error{color:#ffb7b7}small{display:block}#batteryGauge{font-size:2.6rem;font-weight:700}meter{width:100%;height:32px}#confirmBox{border:2px solid #ffcf86;padding:12px;margin-top:10px}[hidden]{display:none!important}:focus-visible{outline:3px solid #ffc865;outline-offset:3px}
 </style>
 <main><h1>ESP32 scooter flasher</h1><p>Phone only · offline · keep power connected</p>
 <p id="network" role="status" aria-live="polite">Connecting to the board…</p>
@@ -16,12 +16,21 @@
 <section><h2>2. Check connection</h2><label for="family">Controller family (choose your model's family)</label>
 <select id="family"><option>Brightway</option><option>LEQI</option></select>
 <p><small>Brightway: 3 Lite, 4, 4 Lite, 4 Ultra, 4 Pro 2nd Gen, 5, 5 Pro, 5 Max. LEQI: 4 Lite 2nd Gen, 5 Plus, 5 Elite, 6, 6 Lite. Compatibility is not guaranteed; LEQI is hardware-untested.</small></p>
-<button id="check" type="button">Check connection (read-only)</button><pre id="device">No controller read yet.</pre></section>
+<button id="check" type="button">Check connection (read-only)</button><pre id="device">No controller read yet.</pre>
+<button id="light" type="button">Light test (5 s)</button><small>The tail light should turn on if the wires are right. Sends stock control frames with throttle and brake fixed at zero. Brightway only.</small></section>
+<section><h2>Data</h2><p id="dataSupport">Verified on Xiaomi 5 / Brightway ESC 0015 only.</p>
+<button id="refresh" type="button">Refresh data and device information</button>
+<label><input id="autoRefresh" type="checkbox">Auto-refresh live data every 2 seconds while idle</label>
+<div id="dataFields"><div id="batteryGauge" aria-live="polite">— %</div><meter id="batteryMeter" min="0" max="100" value="0" aria-label="Battery percent" hidden></meter>
+<pre id="liveData">No readings yet.</pre><pre id="deviceData"></pre>
+<label><input id="showSerials" type="checkbox">Show private serial numbers</label><pre id="serials" hidden></pre></div></section>
 <section><h2>3. Upload firmware</h2><label for="file">Raw patched .bin for your exact scooter</label><input id="file" type="file" accept=".bin,application/octet-stream">
 <button id="upload" type="button">Upload and inspect</button><p id="image">No validated image. Limit: 512 KiB.</p></section>
 <section><h2>4. Flash</h2><p class="warn">A wrong image or lost power can brick the controller. Keep the stock image. Do not move wires, press the scooter's power button or disconnect either power supply.</p>
 <button id="review" type="button" disabled>Review flash</button>
 <div id="confirmBox" hidden><p id="reviewText"></p><label><input id="agree" type="checkbox">I checked the model ID and image compatibility, and both power supplies are stable.</label>
+<p id="batteryWarning" class="warn" role="alert"></p>
+<label id="overrideLabel" hidden><input id="batteryOverride" type="checkbox">I understand the battery/power-loss risk and explicitly override this warning.</label>
 <button id="flash" type="button" disabled>Confirm and flash controller</button><button id="cancel" type="button">Cancel</button></div>
 <progress id="progress" value="0" max="1" aria-label="Flash packet progress"></progress><p id="packets">Packet 0/0</p>
 <pre id="result" role="status" aria-live="polite"></pre><pre id="error" class="error" role="alert"></pre>
@@ -38,14 +47,29 @@
 <script>
 'use strict';
 const el=id=>document.getElementById(id);
-let state=null, token='', online=false, localBusy=false, confirmedImage=null;
-function ready(){return online&&state&&!state.busy&&!localBusy;}
-function clearConfirmation(){confirmedImage=null;el('confirmBox').hidden=true;el('agree').checked=false;el('flash').disabled=true;}
+let state=null, token='', online=false, localBusy=false, confirmedImage=null, reviewing=false;
+function ready(){return online&&state&&!state.busy&&!localBusy&&!reviewing;}
+function clearConfirmation(){confirmedImage=null;el('confirmBox').hidden=true;el('agree').checked=false;el('batteryOverride').checked=false;el('flash').disabled=true;}
 function controls(){
- ['check','upload','probe','family','file','pins'].forEach(id=>el(id).disabled=!ready());
+ ['check','upload','probe','family','file','pins','refresh','light'].forEach(id=>el(id).disabled=!ready());
+ el('light').disabled=!ready()||el('family').value!=='Brightway';
+ el('refresh').disabled=!ready()||el('family').value!=='Brightway';
  const compatible=state&&state.image&&state.info&&state.image.family===state.info.family;
  el('review').disabled=!ready()||!compatible;
- el('flash').disabled=!ready()||!el('agree').checked||!state.image||confirmedImage!==state.image.id;
+ el('flash').disabled=!ready()||!el('agree').checked||!state.image||confirmedImage!==state.image.id||(!el('overrideLabel').hidden&&!el('batteryOverride').checked);
+}
+function renderData(){
+ const supported=el('family').value==='Brightway', d=state&&state.data||{};
+ el('dataSupport').textContent=supported?'Verified on Xiaomi 5 / Brightway ESC 0015 only. Other Brightway models unverified.':'Data: not supported for LEQI yet';
+ el('dataFields').hidden=!supported;
+ el('batteryGauge').textContent=(d.battery_percent===undefined?'—':d.battery_percent)+' %';
+ el('batteryMeter').hidden=d.battery_percent===undefined;el('batteryMeter').value=d.battery_percent||0;
+ const value=(key,unit='')=>d[key]===undefined||d[key]===null?'Unavailable':d[key]+unit;
+ const event=d.event===1?'Normal':d.event===16?'No dashboard / host timeout':value('event');
+ el('liveData').textContent='Voltage: '+value('voltage',' V')+'\nBattery temperature: '+value('battery_temperature',' °C')+'\nESC temperature: '+value('esc_temperature',' °C')+'\nEvent: '+event;
+ el('deviceData').textContent='ESC firmware: '+value('esc_version')+' ('+value('esc_date')+')\nBMS firmware: '+value('bms_version')+' ('+value('bms_date')+')\nBattery manufacture date: '+value('battery_date')+'\nCharge cycles: '+value('cycles')+(d.unavailable&&d.unavailable.length?'\nInfo replies unavailable or inconsistent: '+d.unavailable.join(', '):'');
+ el('serials').hidden=!el('showSerials').checked;
+ el('serials').textContent=el('showSerials').checked?'Battery: '+value('battery_serial')+'\nESC: '+value('esc_serial')+'\nScooter: '+value('scooter_serial'):'';
 }
 function render(s){
  const previous=state;state=s;token=s.token;online=true;
@@ -56,7 +80,7 @@ function render(s){
  el('progress').max=s.total||1;el('progress').value=s.done;el('packets').textContent='Packet '+s.done+'/'+s.total+(s.busy&&s.job==='flash'&&s.total&&s.done===s.total?' · finalizing, keep power on':'');
  el('result').textContent=Array.isArray(s.result)?s.result.join('\n'):(s.result||'');el('error').textContent=s.error||'';
  if(s.busy||!s.image||(previous&&previous.image&&previous.image.id!==s.image.id))clearConfirmation();
- controls();
+ renderData();controls();
 }
 async function poll(){
  try{const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('Status unavailable');render(await r.json());}
@@ -65,15 +89,40 @@ async function poll(){
 }
 async function send(path,data,raw=false){
  localBusy=true;clearConfirmation();el('error').textContent='';controls();
- try{const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':raw?'application/octet-stream':'application/json','X-Flasher-Token':token},body:raw?data:JSON.stringify(data)});const v=await r.json();if(!r.ok)throw Error(v.error||'Request failed');el('result').textContent='Accepted. Waiting for board status…';}
+ try{const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':raw?'application/octet-stream':'application/json','X-Flasher-Token':token},body:raw?data:JSON.stringify(data)});const v=await r.json();if(!r.ok)throw Error(v.error||'Request failed');state.busy=true;el('result').textContent='Accepted. Waiting for board status…';return true;}
  catch(e){el('error').textContent=e.message+' If a flash request lost its reply, check board status before retrying.';}
  finally{localBusy=false;controls();}
 }
 el('check').onclick=()=>send('info',{family:el('family').value});
 el('upload').onclick=()=>{const f=el('file').files[0];if(!f||!f.name.toLowerCase().endsWith('.bin')||f.size<4096||f.size>524288){el('error').textContent='Choose a raw .bin between 4 KiB and 512 KiB.';return;}send('upload',f,true);};
-el('review').onclick=()=>{confirmedImage=state.image.id;el('reviewText').textContent='Flash '+state.image.family+', '+state.image.size+' bytes, model '+(state.image.model_id||'unknown')+' to the connected controller?';el('confirmBox').hidden=false;el('agree').checked=false;controls();};
-el('agree').onchange=controls;el('cancel').onclick=clearConfirmation;
-el('flash').onclick=()=>{if(ready()&&el('agree').checked&&confirmedImage===state.image.id)send('flash',{confirm:confirmedImage});};
+el('review').onclick=async()=>{
+ const image=state.image;reviewing=true;controls();clearConfirmation();
+ try{
+  if(image.family==='Brightway'){
+   if(!await send('battery',{family:'Brightway'}))return;
+   let finished=false;
+   for(let n=0;n<100;n++){
+    await new Promise(resolve=>setTimeout(resolve,300));
+    const r=await fetch('/api/status',{cache:'no-store'});if(!r.ok)throw Error('Battery check unavailable');
+    const s=await r.json();render(s);if(!s.busy){if(s.error)throw Error(s.error);finished=true;break;}
+   }
+   if(!finished)throw Error('Battery check timed out; reconnect and review again');
+  }
+  if(!state.image||state.image.id!==image.id)throw Error('Image changed; review again');
+  confirmedImage=image.id;el('reviewText').textContent='Flash '+image.family+', '+image.size+' bytes, model '+(image.model_id||'unknown')+' to the connected controller?';
+  const warning=image.family==='Brightway'?state.battery_warning:null;
+  el('batteryWarning').textContent=warning||(image.family==='Brightway'?'Battery check passed.':'Battery check is not supported for LEQI.');
+  el('overrideLabel').hidden=!warning;el('batteryOverride').checked=false;el('confirmBox').hidden=false;el('agree').checked=false;
+ }catch(e){el('error').textContent=e.message;}
+ finally{reviewing=false;controls();}
+};
+el('agree').onchange=controls;el('batteryOverride').onchange=controls;el('cancel').onclick=clearConfirmation;
+el('flash').onclick=()=>{if(ready()&&el('agree').checked&&confirmedImage===state.image.id&&(el('overrideLabel').hidden||el('batteryOverride').checked))send('flash',{confirm:confirmedImage,battery_override:el('batteryOverride').checked});};
 el('probe').onclick=()=>{const parts=el('pins').value.split(',').map(v=>v.trim());if(!el('probeSafe').checked||parts.some(v=>!/^\d+$/.test(v))){el('error').textContent='Confirm the measured voltages and enter comma-separated GPIO numbers.';return;}send('probe',{pins:parts.map(Number)});};
+el('refresh').onclick=()=>send('data',{family:el('family').value,full:true});
+el('light').onclick=()=>send('light',{family:el('family').value});
+el('showSerials').onchange=renderData;
+el('family').onchange=()=>{clearConfirmation();el('showSerials').checked=false;renderData();controls();};
+setInterval(()=>{if(el('autoRefresh').checked&&ready()&&!confirmedImage&&el('family').value==='Brightway')send('data',{family:'Brightway'});},2000);
 controls();poll();
 </script></html>

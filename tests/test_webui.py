@@ -53,7 +53,7 @@ class Writer:
 
 
 def request(path='/api/status', body=b'', token=None, method=None, extra=b''):
-    method = method or ('POST' if path in ('/api/upload', '/api/info', '/api/flash', '/api/probe') else 'GET')
+    method = method or ('POST' if path in ('/api/upload', '/api/info', '/api/flash', '/api/probe', '/api/data', '/api/battery', '/api/light') else 'GET')
     kind = 'application/octet-stream' if path == '/api/upload' else 'application/json'
     return (('%s %s HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\nContent-Type: %s\r\n' %
              (method, path, webui.IP, len(body), kind)).encode() +
@@ -82,6 +82,8 @@ def settled(jobs):
 @pytest.fixture
 def ui(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(webui, 'radio', lambda on: None)
+    monkeypatch.setattr(webui.telemetry, 'read_status', lambda: {'battery_percent': 80})
     return webui.WebUI()
 
 
@@ -505,3 +507,86 @@ def test_flash_turns_radio_off_and_back_on(ui, monkeypatch, fails):
     call(ui, '/api/flash', {'confirm': 'current'})
     settled(ui.jobs)
     assert events == [False, 'flash', True]
+
+
+@pytest.mark.parametrize('values,override,allowed', [
+    ({'battery_percent': 19}, None, False), ({'battery_percent': 20}, None, True),
+    ({'battery_percent': 80}, None, True), ({}, None, False),
+    ({'battery_percent': 19}, True, True), ({}, True, True),
+    ({'battery_percent': 1}, 'true', False), ({}, 1, False),
+    ({'battery_percent': 101}, None, False), ({'battery_percent': True}, None, False),
+])
+def test_battery_guard_rechecks_on_server(ui, monkeypatch, values, override, allowed):
+    flashed, radio = [], []
+    monkeypatch.setattr(webui, 'RADIO_OFF_DELAY', 0)
+    monkeypatch.setattr(webui, 'radio', radio.append)
+    monkeypatch.setattr(webui.telemetry, 'read_status', lambda: values)
+    monkeypatch.setattr(bwflash, 'flash', lambda *a, **kw: flashed.append(True))
+    ui.jobs.update(image={'id': 'current', 'family': 'Brightway'}, info={'family': 'Brightway'},
+                   data={'battery_percent': 99}, battery_warning=None)
+    assert call(ui, '/api/flash', {'confirm': 'current', 'battery_override': override})[0] == 202
+    state = settled(ui.jobs)
+    assert bool(flashed) is allowed
+    assert (state['error'] is None) is allowed
+    assert radio == [False, True]
+    if not allowed:
+        assert 'brick the controller' in state['error']
+        assert state['battery_warning']
+
+
+@pytest.mark.parametrize('override', [True, False])
+def test_battery_uart_failure_requires_override(ui, monkeypatch, override):
+    flashed = []
+    def fail():
+        raise OSError('read failed')
+    monkeypatch.setattr(webui.telemetry, 'read_status', fail)
+    monkeypatch.setattr(webui, 'RADIO_OFF_DELAY', 0)
+    monkeypatch.setattr(bwflash, 'flash', lambda *a, **kw: flashed.append(True))
+    ui.jobs.update(image={'id': 'id', 'family': 'Brightway'}, info={'family': 'Brightway'})
+    call(ui, '/api/flash', {'confirm': 'id', 'battery_override': override})
+    state = settled(ui.jobs)
+    assert bool(flashed) is override
+    assert 'could not be read' in state['battery_warning']
+
+
+def test_leqi_flash_does_not_read_brightway_battery(ui, monkeypatch):
+    def fail():
+        pytest.fail('LEQI must not use Brightway telemetry')
+    monkeypatch.setattr(webui.telemetry, 'read_status', fail)
+    monkeypatch.setattr(webui, 'RADIO_OFF_DELAY', 0)
+    monkeypatch.setattr(leqiflash, 'flash', lambda *a, **kw: None)
+    ui.jobs.update(image={'id': 'id', 'family': 'LEQI'}, info={'family': 'LEQI'})
+    call(ui, '/api/flash', {'confirm': 'id'})
+    assert settled(ui.jobs)['error'] is None
+
+
+@pytest.mark.parametrize('path', ['/api/data', '/api/battery', '/api/light'])
+def test_new_uart_jobs_share_lock_and_reject_leqi(ui, path):
+    ui.jobs.claim('flash')
+    assert call(ui, path, {'family': 'Brightway'})[0] == 409
+    ui.jobs.release()
+    assert call(ui, path, {'family': 'LEQI'})[0] == 400
+    assert not ui.jobs.snapshot()['busy']
+
+
+def test_data_full_then_live_drops_stale_live_fields(ui, monkeypatch):
+    monkeypatch.setattr(webui.telemetry, 'read_info', lambda: {'esc_version': '0015', 'battery_serial': 'FAKE'})
+    call(ui, '/api/data', {'family': 'Brightway', 'full': True})
+    assert settled(ui.jobs)['data']['battery_serial'] == 'FAKE'
+    monkeypatch.setattr(webui.telemetry, 'read_status', lambda: {})
+    call(ui, '/api/data', {'family': 'Brightway'})
+    assert settled(ui.jobs)['data'] == {'esc_version': '0015', 'battery_serial': 'FAKE'}
+
+
+def test_light_api_uses_fixed_duration_and_no_control_arguments(ui, monkeypatch):
+    calls = []
+    monkeypatch.setattr(webui.telemetry, 'light_test', lambda: calls.append('fixed') or 'Done')
+    call(ui, '/api/light', {'family': 'Brightway', 'seconds': 100, 'throttle': 100, 'brake': 100})
+    assert settled(ui.jobs)['result'] == 'Done'
+    assert calls == ['fixed']
+
+
+def test_review_reads_current_battery(ui, monkeypatch):
+    monkeypatch.setattr(webui.telemetry, 'read_status', lambda: {'battery_percent': 19})
+    call(ui, '/api/battery', {'family': 'Brightway'})
+    assert settled(ui.jobs)['battery_warning'].startswith('Battery below 20%:')

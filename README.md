@@ -42,7 +42,7 @@ The connection check reads the ESC until two replies agree, for the same reason.
 
 1. Install **MicroPython 1.29 / ESP32_GENERIC** once (see setup A below). Copy all files:
    ```
-   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/leqiflash.py :leqiflash.py + cp esp32/flasher.py :flasher.py + cp esp32/probe.py :probe.py + cp esp32/webui.py :webui.py + cp esp32/webui.html :webui.html + cp esp32/main.py :main.py
+   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/leqiflash.py :leqiflash.py + cp esp32/flasher.py :flasher.py + cp esp32/probe.py :probe.py + cp esp32/telemetry.py :telemetry.py + cp esp32/webui.py :webui.py + cp esp32/webui.html :webui.html + cp esp32/main.py :main.py
    mpremote reset
    ```
    If previously using USB-only mode, remove `webui.disabled` via the REPL before resetting.
@@ -60,7 +60,10 @@ The connection check reads the ESC until two replies agree, for the same reason.
    promotion from the temporary file. Read family, size and model ID (when present).
    A model ID is informational: it does **not** prove compatibility with your scooter.
 5. Tap **Review flash**, check compatibility and stable power, then **Confirm and flash controller**.
-   Only one upload, connection check, probe or flash runs at a time. The page shows packet n/N;
+   For Brightway, review reads battery charge. Below 20%, or if charge cannot be read,
+   an additional explicit battery-risk override is required. The server reads charge again immediately
+   before flashing and enforces the override, including for direct API requests.
+   Only one upload, connection check, data read, light test, probe or flash runs at a time. The page shows packet n/N;
    reaching N/N still requires finalization. Wait for the final success or actionable error.
    **Keep both power supplies connected and do not touch the wires or scooter power button.**
    The Wi-Fi goes off during the flash and the board continues on its own. Rejoin Wi-Fi and reopen the page to read
@@ -89,6 +92,52 @@ Anyone with the AP password can control the board. There is no upstream Wi-Fi co
 Interrupted uploads are discarded; a previous image is never overwritten by a partial/invalid upload.
 After reboot, upload and check the controller again before flashing (old on-disk images are not auto-selected).
 If disk space is exhausted, remove unused files via USB; the phone does not offer arbitrary file deletion.
+
+## Live data and light test
+
+Install `telemetry.py` together with the other ESP32 files. The **Data** section's Refresh
+reads live status and device information; optional auto-refresh reads live status every 2 s
+only while idle. All UART jobs share the existing operation lock. Missing live fields become
+Unavailable rather than retaining an old battery reading. Device information remains from
+the last manual refresh. **LEQI data and light test are not supported yet.**
+
+The following map was checked against the Xiaomi app on **Xiaomi 5, Brightway ESC 0015**;
+other Brightway models remain unverified. Frames are used only after length, SUM8 and
+complement-tail validation. Bad or partial frames are discarded/resynchronized.
+
+| Field | Source / units | Verification |
+|---|---|---|
+| Battery charge, voltage, temperature | Status 0x31; %, V (wire mV), °C | Xiaomi 5 verified |
+| ESC temperature | Status 0x30; °C | Xiaomi 5 verified |
+| Event code | Status 0x30; 0x01 normal, 0x10 no dashboard / host timeout | Known protocol meanings; other events shown numerically |
+| ESC and BMS firmware / dates | Info 0x21 / 0x23 | Xiaomi 5 verified |
+| Battery manufacture date | Info 0x24 | Xiaomi 5 verified |
+| Charge cycles | Info 0x50, byte 7 | Xiaomi 5 verified. Bytes 0–4 matched the app's energy (Wh) and capacity (Ah) throughput once, then read 0 while the dashboard was unplugged, so they are not shown |
+| Battery, ESC and scooter serials | Info 0x27 / 0x28 / 0x29; hidden behind Show | Device page only; never logged by the telemetry reader |
+
+Speed scaling and current are unverified and omitted. Unknown info bytes have no labels.
+Each get-info field requires two identical valid replies in at most three requests; unavailable
+or inconsistent fields are marked unavailable without discarding successful fields. No real
+serial numbers are included in documentation or tests.
+
+**Light test (5 s)** in the connection area sends the stock frame
+`51 10 06 32 01 88 00 00 1E 40 AE` every 20 ms. The owner verified that this
+turns on the tail light as a wiring check. Throttle and brake are always zero and cannot
+be set by the API. The Python `telemetry.light_test(seconds=5)` duration is limited to 10 s.
+No control stream continues after the test finishes; normal host-timeout status may return.
+
+The Brightway web flash guard uses `telemetry.LOW_BATTERY` (20%) as its sole threshold.
+Below it the UI warns: "Battery below 20%: flashing is not recommended (a power loss during
+flashing can brick the controller)" and requires an extra checkbox. An unreadable battery
+requires the same override. At 20% or above the usual compatibility/power confirmation applies.
+A direct API request must carry JSON `battery_override: true` if the fresh server-side read
+is low or unavailable; strings and numbers do not qualify. A refused worker reports its error
+through `/api/status` and restores Wi-Fi. This guard covers the web UI, not the existing USB
+`bwflash.flash()` / `flasher.flash()` APIs. It cannot guarantee stable power or prevent a brick.
+
+Telemetry uses 64-byte UART reads and at most a 69-byte splitter buffer, bounded request
+windows, and at most three retained replies per info field. No dependencies were added.
+Actual MicroPython heap headroom and these new UI flows still require hardware/browser testing.
 
 ## Supported models
 
@@ -135,7 +184,7 @@ listing a family and cable does not guarantee an available or compatible patched
    ```
    **Copy the files**, together with your patched firmware renamed to `fw.bin`:
    ```
-   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/leqiflash.py :leqiflash.py + cp esp32/flasher.py :flasher.py + cp esp32/probe.py :probe.py + cp esp32/webui.py :webui.py + cp esp32/webui.html :webui.html + cp esp32/main.py :main.py + cp patched.bin :fw.bin
+   mpremote cp esp32/bwflash.py :bwflash.py + cp esp32/leqiflash.py :leqiflash.py + cp esp32/flasher.py :flasher.py + cp esp32/probe.py :probe.py + cp esp32/telemetry.py :telemetry.py + cp esp32/webui.py :webui.py + cp esp32/webui.html :webui.html + cp esp32/main.py :main.py + cp patched.bin :fw.bin
    mpremote reset
    ```
    `main.py` holds GPIO17 high from power-up, so the ESC doesn't switch off when you connect the blue wire.

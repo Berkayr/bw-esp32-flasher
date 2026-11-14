@@ -10,6 +10,7 @@ import _thread
 
 import bwflash
 import flasher
+import telemetry
 
 AP_PASSWORD = 'bw-flasher-setup'
 IP = '192.168.4.1'
@@ -21,7 +22,8 @@ PAGE_PATH = 'webui.html'
 RADIO_OFF_DELAY = 1.5  # seconds: lets the flash request's reply reach the phone first
 SAFE_PINS = (4, 5, 13, 14, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33)
 ROUTES = {'/': 'GET', '/api/status': 'GET', '/api/upload': 'POST',
-          '/api/info': 'POST', '/api/flash': 'POST', '/api/probe': 'POST'}
+          '/api/info': 'POST', '/api/flash': 'POST', '/api/probe': 'POST',
+          '/api/data': 'POST', '/api/battery': 'POST', '/api/light': 'POST'}
 
 
 class HTTPError(Exception):
@@ -128,7 +130,7 @@ class Jobs:
         self.gate = _thread.allocate_lock()
         self.mutex = _thread.allocate_lock()
         self.state = dict(busy=False, job=None, done=0, total=0, image=None,
-                          info=None, error=None, result=None)
+                          info=None, data=None, battery_warning=None, error=None, result=None)
 
     def update(self, **values):
         with self.mutex:
@@ -209,11 +211,41 @@ class Jobs:
         self.update(info=result)
         return 'Connection checked (read-only).'
 
-    def flash(self, family):
+    def data(self, full=False):
+        previous = self.snapshot()['data'] or {}
+        self.update(data=None)
+        values = telemetry.read_status()
+        if full:
+            values.update(telemetry.read_info())
+        else:
+            # Never preserve live readings after a failed refresh.
+            for key in ('esc_version', 'esc_date', 'bms_version', 'bms_date',
+                        'battery_date', 'cycles',
+                        'battery_serial', 'esc_serial', 'scooter_serial', 'unavailable'):
+                if key in previous:
+                    values[key] = previous[key]
+        self.update(data=values)
+        return 'Data refreshed (Xiaomi 5 verified; other Brightway models unverified).'
+
+    def battery(self):
+        self.update(battery_warning=telemetry.battery_warning({}))
+        try:
+            values = telemetry.read_status()
+        except OSError:
+            values = {}
+        self.update(battery_warning=telemetry.battery_warning(values))
+        return 'Battery checked for flash review.'
+
+    def flash(self, family, battery_override=False):
         # The radio corrupts UART traffic, so the AP is off for the whole flash.
         time.sleep(RADIO_OFF_DELAY)
         radio(False)
         try:
+            if family == 'Brightway':
+                self.battery()
+                warning = self.snapshot()['battery_warning']
+                if warning and battery_override is not True:
+                    raise bwflash.FlashError(warning + '. Review flash and check the override box.')
             self.module(family).flash(IMAGE_PATH, progress=self.progress)
         finally:
             radio(True)
@@ -297,7 +329,16 @@ class WebUI:
                     raise HTTPError(409, 'Upload, inspect and confirm the current image first')
                 if not info or info['family'] != image['family']:
                     raise HTTPError(409, 'Check the connection for the image family first')
-                function, args = self.jobs.flash, (image['family'],)
+                function, args = self.jobs.flash, (image['family'], data.get('battery_override') is True)
+            elif path in ('/api/data', '/api/light', '/api/battery'):
+                if data.get('family') != 'Brightway':
+                    raise HTTPError(400, 'Data and light test: not supported for LEQI yet')
+                if path == '/api/data':
+                    function, args = self.jobs.data, (data.get('full') is True,)
+                elif path == '/api/battery':
+                    function, args = self.jobs.battery, ()
+                else:
+                    function, args = telemetry.light_test, ()
             else:
                 pins = data.get('pins')
                 if (not isinstance(pins, list) or not 1 <= len(pins) <= 6 or
