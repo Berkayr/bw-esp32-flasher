@@ -36,7 +36,7 @@
 <pre id="result" role="status" aria-live="polite"></pre><pre id="error" class="error" role="alert"></pre>
 <p><small>The board switches its Wi-Fi off while flashing (about 4 minutes), because the radio disturbs the scooter connection. Wait, then rejoin this Wi-Fi and reopen this page to read the result. Results stay until the next operation or board restart.</small></p></section>
 <section><h2>Wire probe wizard</h2><p>Use when the connection check fails. It changes GPIO modes and may switch the scooter off. It cannot prove an unknown wire is safe.</p>
-<ol><li>Measure voltages first. Leave out red, supply and battery-voltage wires.</li><li>Connect ESP32 GND to verified ground, then unknown safe wires to your chosen GPIOs.</li><li>Enter 1–6 distinct GPIO numbers and run the probe.</li></ol>
+<ol><li>Verify ground with a multimeter before connecting anything. Measure voltages first. Leave out red, supply and battery-voltage wires.</li><li>Connect ESP32 GND to verified ground, then unknown safe wires to your chosen GPIOs.</li><li>Enter 1–6 distinct GPIO numbers and run the probe.</li></ol>
 <label for="pins">GPIOs (comma separated)</label><input id="pins" value="4,16,17,18" inputmode="numeric">
 <small>Allowed: 4, 5, 13, 14, 16–19, 21–23, 25–27, 32, 33.</small>
 <label><input id="probeSafe" type="checkbox">I measured the wires; none carries more than 3.3 V.</label>
@@ -44,6 +44,7 @@
 <p>Data/status frames → ESC TX → ESP32 RX. Held high → possible ESC RX, but could be a supply: verify first. Held low → possible ground or driven-low line. Floating → RX or keep-alive; if the scooter switches off, investigate keep-alive. Activity without Brightway frames is inconclusive, especially for LEQI.</p>
 <p>After probing, restore the normal wiring above and run Check connection again. Keep-alive is restored high when the probe ends.</p></section>
 </main>
+<footer><p>Based on bw-flasher by ScooterTeam · CC BY-NC-SA 4.0 · Unofficial, use at your own risk</p><p>Modified: ported to MicroPython by Berkayr, 2026.</p></footer>
 <script>
 'use strict';
 const el=id=>document.getElementById(id);

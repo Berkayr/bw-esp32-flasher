@@ -392,7 +392,7 @@ def test_ap_name_security_and_ip(ui, monkeypatch):
     webui.start_ap()
     assert ('active', 0, False) in calls
     assert ('config', dict(essid='bw-flasher-ABCD', authmode=3,
-                           password=webui.AP_PASSWORD, max_clients=2)) in calls
+                           password=webui.wifi_password(), max_clients=2)) in calls
     assert ('ip', (webui.IP, '255.255.255.0', webui.IP, webui.IP)) in calls
 
 
@@ -599,3 +599,67 @@ def test_review_reads_current_battery(ui, monkeypatch):
     monkeypatch.setattr(webui.telemetry, 'read_status', lambda: {'battery_percent': 19})
     call(ui, '/api/battery', {'family': 'Brightway'})
     assert settled(ui.jobs)['battery_warning'].startswith('Battery below 20%:')
+
+
+def test_wifi_password_generation_persistence_and_reset(ui, monkeypatch):
+    calls = []
+    def random_bytes(count):
+        calls.append(count)
+        return bytes(range(count)) if len(calls) == 1 else bytes([31] * count)
+    monkeypatch.setattr(webui.os, 'urandom', random_bytes)
+    first = webui.wifi_password()
+    assert len(first) == 16 and all(c in webui.PASSWORD_ALPHABET for c in first)
+    assert Path('wifi.txt').read_text() == first
+    assert webui.wifi_password() == first and calls == [16]
+    Path('wifi.txt').unlink()
+    assert webui.wifi_password() != first and calls == [16, 16]
+
+
+@pytest.mark.parametrize('content', ['', 'short', 'A' * 64, 'A' * 16 + '\n', 'I' * 16])
+def test_wifi_invalid_file_fails_closed(ui, content):
+    Path('wifi.txt').write_text(content)
+    with pytest.raises(ValueError, match='Invalid wifi.txt'):
+        webui.wifi_password()
+    assert Path('wifi.txt').read_text() == content
+
+
+def test_wifi_storage_error_is_not_treated_as_first_boot(ui):
+    Path('wifi.txt').mkdir()
+    with pytest.raises(OSError):
+        webui.wifi_password()
+    assert not Path('wifi.txt.tmp').exists()
+
+
+def test_wifi_boot_prints_credentials(ui, monkeypatch, capsys):
+    monkeypatch.setattr(webui, 'disabled', lambda: False)
+    monkeypatch.setattr(webui, 'start_ap', lambda: types.SimpleNamespace(config=lambda key: 'bw-flasher-TEST'))
+    async def serve(_):
+        return
+    monkeypatch.setattr(webui, 'serve', serve)
+    webui.run()
+    output = capsys.readouterr().out
+    assert 'bw-flasher-TEST' in output
+    assert 'Wi-Fi password: ' + webui.wifi_password() in output
+
+
+@pytest.mark.parametrize('failure', ['credentials', 'config'])
+def test_ap_setup_failure_does_not_leave_radio_active(ui, monkeypatch, failure):
+    events = []
+    class WLAN:
+        IF_STA, IF_AP = 0, 1
+        def __init__(self, mode):
+            self.mode = mode
+        def active(self, value):
+            if self.mode == self.IF_AP:
+                events.append(value)
+        def config(self, **kwargs):
+            raise OSError('configuration failed')
+    def credentials():
+        if failure == 'credentials':
+            raise OSError('storage failed')
+        return {'ssid': 'test', 'password': 'A' * 16}
+    monkeypatch.setitem(sys.modules, 'network', types.SimpleNamespace(WLAN=WLAN))
+    monkeypatch.setattr(webui, 'wifi_credentials', credentials)
+    with pytest.raises(OSError):
+        webui.start_ap()
+    assert events == ([] if failure == 'credentials' else [True, False])

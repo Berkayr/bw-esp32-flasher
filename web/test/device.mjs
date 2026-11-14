@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {infoCode, dataCode, lightCode, batteryCode, probeCode, inspectCode, flashCode, resultFrom} from '../device.js';
+import {wifiCode, infoCode, dataCode, lightCode, batteryCode, probeCode, inspectCode, flashCode, resultFrom} from '../device.js';
 
 test('every ESC operation disables AP before controller access', () => {
   for (const code of [infoCode('Brightway'), infoCode('LEQI'), dataCode(true), lightCode(), batteryCode(), probeCode([4,16]), flashCode({family:'Brightway',size:4096,crc:0}, false)]) {
@@ -20,4 +20,11 @@ test('preflight precedes atomic promotion, probe always restores keep-alive', ()
   assert.match(probeCode([17]), /finally:\n if bwflash.KEEP_PIN/);
   assert.deepEqual(resultFrom('unstructured log\n## {"family":"Brightway"}\r\n'), {family:'Brightway'});
   assert.throws(() => resultFrom('no structured result'));
+});
+
+test('USB setup reads credentials after disabling Wi-Fi without logging them', () => {
+  const code = wifiCode();
+  assert.ok(code.indexOf('active(False)') < code.indexOf('webui.wifi_credentials()'));
+  assert.ok(!code.includes('start_ap') && !code.includes('active(True)'));
+  assert.match(code, /print\('## '/);
 });

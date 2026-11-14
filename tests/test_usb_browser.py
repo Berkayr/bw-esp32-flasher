@@ -22,7 +22,7 @@ def programs():
       const image={family:'Brightway',size:4096,crc:3340501009};
       console.log(JSON.stringify({normal:d.flashCode(image,false),override:d.flashCode(image,true),
         leqi:d.flashCode({...image,family:'LEQI'},false),inspect:d.inspectCode(),
-        probe:d.probeCode([17]),info:d.infoCode('Brightway'),data:d.dataCode(true),light:d.lightCode(),battery:d.batteryCode()}));
+        wifi:d.wifiCode(),probe:d.probeCode([17]),info:d.infoCode('Brightway'),data:d.dataCode(true),light:d.lightCode(),battery:d.batteryCode()}));
     """
     result = json.loads(subprocess.check_output(['node', '--input-type=module', '-e', source], cwd=ROOT))
     for code in result.values():
@@ -132,3 +132,12 @@ def test_probe_restores_keepalive_on_error(programs, device, monkeypatch):
     with pytest.raises(OSError, match='probe failed'):
         exec(programs['probe'], {})
     assert events[-1] == ('keep', (17, 1), {'value': 1})
+
+
+def test_usb_reads_wifi_credentials_without_starting_ap(programs, device, monkeypatch, capsys):
+    import webui
+    credentials = {'ssid': 'bw-flasher-TEST', 'password': 'ABCDEFGHJKLMNPQR'}
+    monkeypatch.setattr(webui, 'wifi_credentials', lambda: credentials)
+    exec(programs['wifi'], {})
+    assert json.loads(capsys.readouterr().out.strip()[3:]) == credentials
+    assert device[1] == [('radio', False)]

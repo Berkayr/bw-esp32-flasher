@@ -2,6 +2,8 @@
 #
 # Port of the DFU logic and key generation of ScooterTeam bw-flasher
 # (https://github.com/scooterteam/bw-flasher, commit 8baeea1).
+# Copyright (C) 2024-2025 ScooterTeam
+# Modified: ported to MicroPython by Berkayr, 2026
 # Licensed under CC BY-NC-SA 4.0, same as the original.
 #
 # Usage on the ESP32 REPL:

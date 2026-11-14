@@ -421,8 +421,8 @@ def test_boot_respects_keep_pin(monkeypatch):
 def test_probe_releases_pins_on_failure(monkeypatch):
     import runpy
     calls = []
-    pin = lambda *args: calls.append(args)
-    pin.IN = 0
+    pin = lambda *args, **kwargs: calls.append((args, kwargs))
+    pin.IN, pin.OUT = 0, 1
     monkeypatch.setitem(sys.modules, 'machine', types.SimpleNamespace(Pin=pin, UART=None))
     module = runpy.run_path(os.path.join(ROOT, 'esp32', 'probe.py'))
     def fail(pin):
@@ -430,7 +430,7 @@ def test_probe_releases_pins_on_failure(monkeypatch):
     module['run'].__globals__['classify'] = fail
     with pytest.raises(OSError, match='probe failed'):
         module['run']((16,))
-    assert calls == [(16, 0)]
+    assert calls == [((16, 0), {}), ((bwflash.KEEP_PIN, 1), {'value': 1})]
 
 
 def test_probe_releases_uart_on_failure(monkeypatch):

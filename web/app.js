@@ -1,5 +1,5 @@
 import {RawRepl, parseProgress, crc32} from './repl.js';
-import {infoCode, dataCode, lightCode, batteryCode, probeCode, inspectCode, flashCode, resultFrom} from './device.js';
+import {wifiCode, infoCode, dataCode, lightCode, batteryCode, probeCode, inspectCode, flashCode, resultFrom} from './device.js';
 const el = id => document.getElementById(id);
 const supported = window.isSecureContext && 'serial' in navigator &&
   !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) &&
@@ -68,7 +68,9 @@ el('connect').onclick = () => job('Connecting to ESP32', async () => {
   el('device').textContent = 'No controller read yet.';
   el('image').textContent = 'No validated image.';
   // No ESC access until the radio is off, including after every reconnect.
-  await repl.exec('import network\nnetwork.WLAN(network.WLAN.IF_AP).active(False)');
+  el('wifi').textContent = '';
+  const wifi = resultFrom(await repl.exec(wifiCode()));
+  el('wifi').textContent = `Phone Wi-Fi: ${wifi.ssid} · Password: ${wifi.password}. After USB disconnect, reset the ESP32 to enable Wi-Fi.`;
 });
 el('disconnect').onclick = () => job('Disconnecting USB', async () => {
   await repl.close(); repl = null; info = image = null; data = {}; clearReview(); renderData();

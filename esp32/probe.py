@@ -3,10 +3,9 @@
 #   import probe
 #   probe.run((4, 16, 17, 18))   # GPIOs the unknown wires are connected to
 #
-# Never connect the power wire (battery/7 V+) to a GPIO. Connect ESP32 GND to the
-# wire you believe is ground only after the probe shows it as GND on a GPIO first.
-# If the scooter switches off while a wire is probed, that wire must be held high
-# (KEEP_PIN in bwflash.py).
+# Verify ground with a multimeter before connecting anything. Measure signal
+# voltages first: never connect a supply or a signal above 3.3 V to a GPIO.
+# Verdicts are hints, not proof of wire identity or electrical safety.
 
 import time
 from machine import Pin, UART
@@ -68,12 +67,16 @@ def classify(pin):
 
 
 def run(pins=(4, 16, 17, 18), report=None):
-    for p in pins:
-        try:
-            verdict = classify(p)
-            if report is None:
-                print('GPIO%d: %s' % (p, verdict))
-            else:
-                report(p, verdict)
-        finally:
-            Pin(p, Pin.IN)
+    try:
+        for p in pins:
+            try:
+                verdict = classify(p)
+                if report is None:
+                    print('GPIO%d: %s' % (p, verdict))
+                else:
+                    report(p, verdict)
+            finally:
+                Pin(p, Pin.IN)
+    finally:
+        if bwflash.KEEP_PIN is not None:
+            Pin(bwflash.KEEP_PIN, Pin.OUT, value=1)

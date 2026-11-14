@@ -11,6 +11,8 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 MICROPYTHON_URL = 'https://micropython.org/resources/firmware/ESP32_GENERIC-20260824-v1.29.0.bin'
 MICROPYTHON_SHA256 = 'e67ad6015a0a504c1fec9aa9bbf589d0432ed28e62546f4f8dd8a147f8bd95f6'
+MICROPYTHON_LICENSE_URL = 'https://raw.githubusercontent.com/micropython/micropython/v1.29.0/LICENSE'
+MICROPYTHON_LICENSE_SHA256 = '80d3459978572b5bbb1dd274a98b01a625aeff467588ad69cefdf7eb607c1306'
 IMAGE_BASE = 0x1000
 PARTITION_TABLE = 0x8000
 FLASH_SIZE = 4 * 1024 * 1024
@@ -76,15 +78,40 @@ def manifest():
                 {'path': 'firmware/bw-esp32-flasher.bin', 'offset': 0}]}]}
 
 
-def filesystem_image(size):
+def license_notice(data):
+    if hashlib.sha256(data).hexdigest() != MICROPYTHON_LICENSE_SHA256:
+        raise ValueError('MicroPython licence SHA-256 mismatch; refusing to build')
+    return ("bw-esp32-flasher\n"
+            "Copyright (C) 2024-2025 ScooterTeam\n"
+            "Modified: ported to MicroPython by Berkayr, 2026\n"
+            "Based on https://github.com/scooterteam/bw-flasher\n"
+            "Port: CC BY-NC-SA 4.0 (non-commercial, attribution, share alike).\n"
+            "https://creativecommons.org/licenses/by-nc-sa/4.0/\n"
+            "Changes: MicroPython UART/streaming ports, probe, telemetry, Wi-Fi and USB UIs.\n"
+            "Unofficial, use at your own risk. No warranty.\n\n"
+            "The installer includes unmodified MicroPython 1.29.0 (MIT); other components\n"
+            "retain their own licences. This is not a blanket licence for the image.\n"
+            "MicroPython licence source: " + MICROPYTHON_LICENSE_URL + "\n"
+            "ESP-IDF licence inventory and component notices: \n"
+            "https://docs.espressif.com/projects/esp-idf/en/stable/esp32/COPYRIGHT.html\n"
+            "https://github.com/espressif/esp-idf (see LICENSE and components/).\n"
+            "Consult the MicroPython v1.29.0 ESP32 build configuration for SDK selection.\n"
+            "ESP Web Tools 10.5.2: Apache-2.0, loaded from CDN, not in this image.\n"
+            "esptool and littlefs-python are host build tools only.\n\n"
+            + data.decode('utf-8'))
+
+
+def filesystem_image(size, notice):
     from littlefs import LittleFS, UserContext
     config = dict(block_size=BLOCK_SIZE, block_count=size // BLOCK_SIZE,
                   read_size=32, prog_size=32, cache_size=128, lookahead_size=32)
     fs = LittleFS(**config)
     sources = sorted((ROOT / 'esp32').glob('*.py')) + [ROOT / 'esp32/webui.html']
-    for path in sources:
-        with fs.open(path.name, 'wb') as stream:
-            stream.write(path.read_bytes())
+    files = {path.name: path.read_bytes() for path in sources}
+    files['NOTICE.txt'] = notice.encode('utf-8')
+    for name, content in files.items():
+        with fs.open(name, 'wb') as stream:
+            stream.write(content)
     fs.unmount()
     data = bytes(fs.context.buffer)
     # Mount a fresh context without auto-formatting, then compare every byte.
@@ -92,12 +119,12 @@ def filesystem_image(size):
     context.buffer[:] = data
     check = LittleFS(context=context, mount=False, **config)
     check.mount()
-    if sorted(check.listdir('/')) != sorted(p.name for p in sources):
+    if sorted(check.listdir('/')) != sorted(files):
         raise ValueError('LittleFS file listing mismatch')
-    for path in sources:
-        with check.open(path.name, 'rb') as stream:
-            if stream.read() != path.read_bytes():
-                raise ValueError('LittleFS read-back mismatch: ' + path.name)
+    for name, content in files.items():
+        with check.open(name, 'rb') as stream:
+            if stream.read() != content:
+                raise ValueError('LittleFS read-back mismatch: ' + name)
     print('LittleFS read-back:', ', '.join(check.listdir('/')))
     check.unmount()
     return data
@@ -112,7 +139,10 @@ def main():
     offset, size = vfs_partition(data)
     print('MicroPython SHA-256:', MICROPYTHON_SHA256)
     print('vfs: offset=0x%x size=0x%x blocks=%d' % (offset, size, size // BLOCK_SIZE))
-    fs_data = filesystem_image(size)
+    notice = license_notice(urllib.request.urlopen(MICROPYTHON_LICENSE_URL, timeout=60).read())
+    # The on-board notice keeps the complete MIT grant; the sidecar also has the inventory.
+    short_notice = notice.split('--------------------------------------------------------------------------------', 1)[0]
+    fs_data = filesystem_image(size, short_notice)
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as directory:
         temp = Path(directory)
@@ -126,6 +156,7 @@ def main():
         if len(result) != offset + size or result[offset:offset + size] != fs_data:
             raise ValueError('Merged image offset/length mismatch')
         OUTPUT.write_bytes(result)
+    OUTPUT.with_name('NOTICE.txt').write_text(notice, encoding='utf-8')
     (ROOT / 'web/manifest.json').write_text(json.dumps(manifest(), indent=2) + '\n')
     print('Output:', OUTPUT)
     print('Output SHA-256:', hashlib.sha256(result).hexdigest())

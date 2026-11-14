@@ -12,7 +12,8 @@ import bwflash
 import flasher
 import telemetry
 
-AP_PASSWORD = 'bw-flasher-setup'
+WIFI_PATH = 'wifi.txt'
+PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'  # gitleaks:allow (alphabet, not a secret)
 IP = '192.168.4.1'
 MAX_UPLOAD = 512 * 1024
 CHUNK = 1024
@@ -418,16 +419,44 @@ class WebUI:
 _ap = None
 
 
+def wifi_password():
+    try:
+        with open(WIFI_PATH) as source:
+            password = source.read(65)
+    except OSError as exc:
+        if exc.args[0] != 2:
+            raise
+        password = ''.join(PASSWORD_ALPHABET[b & 31] for b in os.urandom(16))
+        with open(WIFI_PATH + '.tmp', 'w') as target:
+            if target.write(password) != len(password):
+                raise OSError('Short Wi-Fi password write')
+        os.rename(WIFI_PATH + '.tmp', WIFI_PATH)
+    if not 12 <= len(password) <= 63 or any(c not in PASSWORD_ALPHABET for c in password):
+        raise ValueError('Invalid wifi.txt; delete it via USB and restart to reset Wi-Fi')
+    return password
+
+
+def wifi_credentials():
+    import network
+    ap = network.WLAN(network.WLAN.IF_AP)
+    suffix = binascii.hexlify(ap.config('mac')[-2:]).decode().upper()
+    return {'ssid': 'bw-flasher-' + suffix, 'password': wifi_password()}
+
+
 def start_ap():
     global _ap
     import network
     network.WLAN(network.WLAN.IF_STA).active(False)
     ap = network.WLAN(network.WLAN.IF_AP)
+    credentials = wifi_credentials()
     ap.active(True)
-    suffix = binascii.hexlify(ap.config('mac')[-2:]).decode().upper()
-    # authmode/password are the ESP32 aliases retained in MicroPython 1.29.
-    ap.config(essid='bw-flasher-' + suffix, authmode=3, password=AP_PASSWORD, max_clients=2)
-    ap.ifconfig((IP, '255.255.255.0', IP, IP))
+    try:
+        # authmode/password are the ESP32 aliases retained in MicroPython 1.29.
+        ap.config(essid=credentials['ssid'], authmode=3, password=credentials['password'], max_clients=2)
+        ap.ifconfig((IP, '255.255.255.0', IP, IP))
+    except Exception:
+        ap.active(False)
+        raise
     _ap = ap
     return ap
 
@@ -469,5 +498,6 @@ def run():
     remove_temp()
     ap = start_ap()
     print('Connect to', ap.config('essid'), 'and open http://' + IP)
+    print('Wi-Fi password:', wifi_password())
     gc.collect()
     asyncio.run(serve(WebUI()))

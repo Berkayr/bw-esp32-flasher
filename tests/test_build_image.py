@@ -54,3 +54,30 @@ def test_manifest_has_single_image_at_merged_base_zero():
     assert saved['builds'] == [{'chipFamily': 'ESP32', 'parts': [
         {'path': 'firmware/bw-esp32-flasher.bin', 'offset': 0}]}]
     assert saved['new_install_prompt_erase'] is True
+
+
+def test_notice_rejects_unpinned_text_and_preserves_attribution(monkeypatch):
+    with pytest.raises(ValueError, match='licence SHA-256'):
+        build.license_notice(b'wrong licence')
+    text = b'Permission is hereby granted: test fixture'
+    monkeypatch.setattr(build, 'MICROPYTHON_LICENSE_SHA256', hashlib.sha256(text).hexdigest())
+    notice = build.license_notice(text)
+    for value in ('Copyright (C) 2024-2025 ScooterTeam', 'Berkayr, 2026',
+                  'CC BY-NC-SA 4.0', 'ESP-IDF', 'MicroPython 1.29.0 (MIT)', text.decode()):
+        assert value in notice
+
+
+def test_filesystem_notice_readback():
+    pytest.importorskip('littlefs')
+    data = build.filesystem_image(2 * 1024 * 1024, 'test notice')
+    from littlefs import LittleFS, UserContext
+    context = UserContext(len(data))
+    context.buffer[:] = data
+    fs = LittleFS(context=context, mount=False, block_size=4096, block_count=512,
+                  read_size=32, prog_size=32, cache_size=128, lookahead_size=32)
+    fs.mount()
+    with fs.open('NOTICE.txt', 'r') as source:
+        assert source.read() == 'test notice'
+    assert 'webui.py' in fs.listdir('/') and 'main.py' in fs.listdir('/')
+    assert 'wifi.txt' not in fs.listdir('/')
+    fs.unmount()

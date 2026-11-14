@@ -9,6 +9,9 @@ function moduleFor(family) {
   if (!['Brightway', 'LEQI'].includes(family)) throw Error('Unknown controller family');
   return family === 'Brightway' ? 'bwflash' : 'leqiflash';
 }
+export const wifiCode = () => `import network, json, webui
+network.WLAN(network.WLAN.IF_AP).active(False)
+` + emit('webui.wifi_credentials()');
 export function infoCode(family) {
   const module = moduleFor(family);
   return prefix + `import ${module}\nr=${module}.info()\n` + emit(family === 'Brightway' ?

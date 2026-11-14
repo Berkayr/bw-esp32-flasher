@@ -10,7 +10,7 @@ python tools/build_image.py
 
 Output: `web/firmware/bw-esp32-flasher.bin`, a single 4 MiB image written at offset **0**.
 It includes the stock bootloader, partition table and application at their original addresses,
-then a LittleFS2 volume with every `esp32/*.py` file and `esp32/webui.html`.
+then a LittleFS2 volume with every `esp32/*.py` file and `esp32/webui.html`, plus an on-board `NOTICE.txt`.
 The script never opens a serial port. Binaries are ignored; include the generated file in the
 Pages artifact when the owner publishes the contents of `web/`. No automatic publishing is configured.
 The manifest and local wiring image make `web/` self-contained apart from ESP Web Tools' CDN.
@@ -24,6 +24,15 @@ Pinned inputs:
 | littlefs-python | 0.15.0 (sdist) | `0d1151d9b868c589da7c8ab6202ff52eaa99c116b9f9216b054a252f75eeb260` |
 | esptool | 5.1.0 (sdist) | `2ea9bcd7eb263d380a4fe0170856a10e4c65e3f38c757ebdc73584c8dd8322da` |
 | ESP Web Tools | [10.5.2 install-button.js](https://unpkg.com/esp-web-tools@10.5.2/dist/web/install-button.js?module) | Exact version URL in `web/index.html`; dependencies loaded by the CDN |
+
+The builder also downloads the [MicroPython v1.29.0 licence](https://github.com/micropython/micropython/blob/v1.29.0/LICENSE),
+SHA-256 `80d3459978572b5bbb1dd274a98b01a625aeff467588ad69cefdf7eb607c1306`.
+It writes `web/firmware/NOTICE.txt` with port attribution, CC BY-NC-SA terms/link,
+the complete MicroPython licence and ESP-IDF licence pointers. The on-board notice
+keeps attribution, component pointers and the complete MIT grant; the sidecar also includes
+the upstream licence inventory. Publish the notice alongside the image. Only `.bin` files
+are ignored in that directory. No per-board password is baked into the image: `wifi.txt`
+is created on first boot.
 
 The builder enforces the MicroPython hash and Python tool versions. The sdist hashes above
 identify the releases; pip may install platform wheels. Transitive Python build dependencies

@@ -17,6 +17,7 @@
 <a href="https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers" target="_blank" rel="noopener noreferrer">CP210x (Silicon Labs)</a> or
 <a href="https://www.wch-ic.com/downloads/CH341SER_EXE.html" target="_blank" rel="noopener noreferrer">CH340 (WCH, Windows)</a>. On Linux, ensure your user has serial-port permission.</p></section>
 <section><h2>2. Connect over USB</h2><p>After installation, close the installer dialog to release its serial port. Connect below and select the same USB port. An installed board can skip step 1.</p>
+<p id="wifi" role="status" aria-live="polite"></p>
 <button id="connect">Connect ESP32</button><button id="disconnect" disabled>Disconnect USB</button>
 <p>Connecting interrupts the phone web server and turns Wi-Fi off for clean scooter communication. Do not connect while any flash is running. Disconnect releases USB; press ESP32 RESET afterwards to restore phone Wi-Fi mode.</p></section>
 <section><h2>3. Wire the controller</h2><p>Disconnect the dashboard. With USB connected, switch the scooter on and connect verified ground first.</p>
@@ -27,7 +28,7 @@
 <p class="warn">Colours vary. The guide's M7 colours are GND yellow, RX white, TX green, keep-alive black. Red is power, never a signal. GPIOs accept only 3.3 V. Measure unknown wires first.</p>
 <p><a href="docs/wiring-esp32.svg" target="_blank">Open wiring picture</a></p>
 <details><summary>Wire probe wizard</summary><p>Use when the connection check fails. It changes GPIO modes and may switch the scooter off. It cannot prove an unknown wire is safe.</p>
-<ol><li>Measure voltages first. Leave out red, supply and battery-voltage wires.</li><li>Connect ESP32 GND to verified ground, then unknown safe wires to your chosen GPIOs.</li><li>Enter 1–6 distinct GPIO numbers and run the probe.</li></ol>
+<ol><li>Verify ground with a multimeter before connecting anything. Measure voltages first. Leave out red, supply and battery-voltage wires.</li><li>Connect ESP32 GND to verified ground, then unknown safe wires to your chosen GPIOs.</li><li>Enter 1–6 distinct GPIO numbers and run the probe.</li></ol>
 <label for="pins">GPIOs (comma separated)</label><input id="pins" value="4,16,17,18" inputmode="numeric">
 <small>Allowed: 4, 5, 13, 14, 16–19, 21–23, 25–27, 32, 33.</small>
 <label><input id="probeSafe" type="checkbox">I measured the wires; none carries more than 3.3 V.</label>
@@ -55,4 +56,5 @@
 <pre id="result" role="status" aria-live="polite"></pre><pre id="error" class="error" role="alert"></pre>
 <p><small>Flashing takes about 4 minutes on the tested Xiaomi 5. Packet N/N still requires finalization. Wait for the final success message. If USB disconnects, keep power on and wait at least 10 minutes before reconnecting: the board may continue flashing. Never reset a running flash.</small></p></section>
 <p>Serial numbers stay in this tab's memory, hidden until requested. They are never logged, stored or sent to a server. The installer loads ESP Web Tools from a pinned CDN version; controller operations use only USB.</p>
+<footer><p>Based on <a href="https://github.com/scooterteam/bw-flasher">bw-flasher by ScooterTeam</a> · <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> · Unofficial, use at your own risk</p><p>Modified: ported to MicroPython by Berkayr, 2026. <a href="firmware/NOTICE.txt">Installer licences and notices</a></p></footer>
 </main></body></html>
