@@ -26,7 +26,7 @@ Create a compatible patched image with [bw-patcher](https://github.com/scooterte
 
 ## E. PC browser (no install)
 
-Hosted page: coming soon. Until then run it locally:
+Hosted page: <https://berkayr.github.io/bw-esp32-flasher/> (desktop Chrome/Edge). Or run it locally:
 
 ```sh
 git clone https://github.com/Berkayr/bw-esp32-flasher.git
@@ -82,7 +82,7 @@ The build downloads and SHA-256 verifies **MicroPython ESP32_GENERIC 1.29.0** an
 `web/firmware/bw-esp32-flasher.bin` (4 MiB, flash offset 0). See
 [build details and pinned hashes](tools/README.md). The binary output is ignored and is not committed; keep the generated `NOTICE.txt` with the published image.
 Publish the **contents of `web/`**, including the generated `firmware/` directory, as the Pages
-artifact so that `index.html` is at the site's root. There is no publishing workflow yet.
+artifact so that `index.html` is at the site's root. `.github/workflows/pages.yml` does this on every published release.
 Without the built image, installation is disabled with an explanation; installed boards can
 still connect. To update modules, rebuild and reinstall; installation erases previous files.
 

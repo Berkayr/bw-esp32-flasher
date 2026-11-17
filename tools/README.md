@@ -12,7 +12,7 @@ Output: `web/firmware/bw-esp32-flasher.bin`, a single 4 MiB image written at off
 It includes the stock bootloader, partition table and application at their original addresses,
 then a LittleFS2 volume with every `esp32/*.py` file and `esp32/webui.html`, plus an on-board `NOTICE.txt`.
 The script never opens a serial port. Binaries are ignored; include the generated file in the
-Pages artifact when the owner publishes the contents of `web/`. No automatic publishing is configured.
+Pages artifact; `.github/workflows/pages.yml` builds and publishes it on every release.
 The manifest and local wiring image make `web/` self-contained apart from ESP Web Tools' CDN.
 The source wiring drawing is `docs/wiring-esp32.svg`; keep its `web/docs/` copy in sync.
 
